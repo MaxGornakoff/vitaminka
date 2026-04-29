@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List
-import uuid
+from sqlalchemy.orm import Session
 
+from app.db.session import get_db
 from app.services.chat_service import ChatService
 
 router = APIRouter()
@@ -19,14 +20,13 @@ class ChatMessageResponse(BaseModel):
 class ChatHistoryResponse(BaseModel):
     messages: List[ChatMessageResponse]
 
-chat_service = ChatService()
-
 @router.post("/message", response_model=ChatMessageResponse)
-async def send_message(request: ChatMessageRequest):
+async def send_message(request: ChatMessageRequest, db: Session = Depends(get_db)):
     """
     Отправить сообщение в чат и получить ответ от ассистента
     """
     try:
+        chat_service = ChatService(db=db)
         response = await chat_service.process_message(
             shop_id=request.shop_id,
             session_id=request.session_id,
@@ -37,11 +37,12 @@ async def send_message(request: ChatMessageRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/history/{session_id}", response_model=ChatHistoryResponse)
-async def get_chat_history(session_id: str):
+async def get_chat_history(session_id: str, db: Session = Depends(get_db)):
     """
     Получить историю диалога
     """
     try:
+        chat_service = ChatService(db=db)
         messages = await chat_service.get_chat_history(session_id)
         return ChatHistoryResponse(messages=messages)
     except Exception as e:

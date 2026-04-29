@@ -1,6 +1,6 @@
 // Vitaminka Assistant Widget
 // Универсальный виджет для установки на сайт магазина
-// С анимированным персонажем (Rive) и синтезом речи
+// С анимированным персонажем (Rive)
 
 (function() {
   const API_URL = window.VITAMINKA_API_URL || 'http://localhost:8000';
@@ -11,28 +11,6 @@
   const script = document.createElement('script');
   script.src = 'https://cdn.rive.app/rive.js';
   document.head.appendChild(script);
-  // Инициализация Text-to-Speech API
-  const synth = window.speechSynthesis;
-  let isSpeechEnabled = localStorage.getItem(`vitaminka_speech_${SHOP_ID}`) !== 'false';
-  
-  // Кроссбраузерная поддержка
-  const SpeechUtterance = window.SpeechUtterance || window.webkitSpeechUtterance;
-  
-  function speakText(text) {
-    if (!isSpeechEnabled || !synth || !SpeechUtterance) return;
-    
-    // Отменяем предыдущую речь
-    synth.cancel();
-    
-    const utterance = new SpeechUtterance(text);
-    utterance.lang = 'ru-RU';
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-    
-    synth.speak(utterance);
-  }
-
   // Генерируем уникальный ID сессии для каждого пользователя
   function getOrCreateSessionId() {
     const key = `vitaminka_session_${SHOP_ID}`;
@@ -371,7 +349,6 @@
           <div class="header">
             <h2 class="header-title">Vitaminka Assistant</h2>
             <div class="header-controls">
-              <button class="header-btn sound-toggle" title="Вкл/выкл звук">🔊</button>
               <button class="header-btn close-btn" title="Закрыть">&times;</button>
             </div>
           </div>
@@ -392,17 +369,10 @@
 
     setupEventListeners() {
       const closeBtn = this.shadowRoot.querySelector('.close-btn');
-      const soundToggle = this.shadowRoot.querySelector('.sound-toggle');
       const input = this.shadowRoot.querySelector('.input-area input');
       const sendBtn = this.shadowRoot.querySelector('.input-area button');
 
       closeBtn.addEventListener('click', () => this.remove());
-      
-      soundToggle.addEventListener('click', () => {
-        isSpeechEnabled = !isSpeechEnabled;
-        localStorage.setItem(`vitaminka_speech_${SHOP_ID}`, isSpeechEnabled);
-        soundToggle.textContent = isSpeechEnabled ? '🔊' : '🔇';
-      });
       
       input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -463,10 +433,7 @@
         // Персонаж говорит
         this.setCharacterState('speaking');
         
-        // Синтез речи
-        speakText(data.content);
-        
-        // После окончания речи возвращаемся в idle
+        // После показа ответа возвращаемся в idle
         setTimeout(() => {
           this.setCharacterState('idle');
         }, 3000);

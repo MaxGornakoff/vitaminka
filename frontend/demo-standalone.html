@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vitaminka Assistant — Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .page-content {
+      text-align: center;
+      color: white;
+      padding: 40px 20px;
+    }
+    .page-content h1 { font-size: 2.5rem; margin-bottom: 10px; }
+    .page-content p { font-size: 1.1rem; opacity: 0.7; margin-bottom: 30px; }
+    .hint {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 12px;
+      padding: 16px 24px;
+      display: inline-block;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    .hint span { color: #64b5f6; }
+  </style>
+</head>
+<body>
+  <div class="page-content">
+    <h1>🛍️ Vitaminka Shop</h1>
+    <p>Демонстрация AI-ассистента для интернет-магазина</p>
+    <div class="hint">
+      Нажмите на кнопку <span>💬</span> в правом нижнем углу
+    </div>
+  </div>
+
+  <!-- ========== VITAMINKA WIDGET INLINE ========== -->
+  <script>
+  (function () {
+    /* ---- Конфиг ---- */
+    const SHOP_ID = 'demo_shop';
+    const RIVE_CDN = 'https://unpkg.com/@rive-app/canvas@2.21.6/rive.js';
+    // Публичный .riv файл с персонажем из Rive Community
+    const RIVE_FILE = 'https://public.rive.app/community/runtime-files/2195-4346-avatar-pack-use-case.riv';
+
+    /* ---- Голос отключён ---- */
+
+    /* ---- Session ---- */
+    function getSession() {
+      let id = sessionStorage.getItem('vk_sid');
+      if (!id) { id = 'sess_' + Date.now(); sessionStorage.setItem('vk_sid', id); }
+      return id;
+    }
+
+    /* ---- Mock API (без backend) ---- */
+    const mockReplies = [
+      'Привет! Я ваш виртуальный помощник. Чем могу помочь?',
+      'Отличный вопрос! У нас большой ассортимент товаров. Расскажите подробнее, что вас интересует?',
+      'Для вас я подберу оптимальный вариант. Какой у вас бюджет?',
+      'Этот товар сейчас в наличии и имеет отличные отзывы покупателей!',
+      'Хотите, я покажу похожие товары в других ценовых категориях?',
+      'Доставка по городу занимает 1–2 дня, по России — до 7 дней.',
+      'Можете оформить заказ прямо сейчас — это займёт меньше минуты!',
+    ];
+    let replyIndex = 0;
+
+    async function mockFetch(message) {
+      await new Promise(r => setTimeout(r, 900 + Math.random() * 600));
+      const reply = mockReplies[replyIndex % mockReplies.length];
+      replyIndex++;
+      return reply;
+    }
+
+    /* ========== WEB COMPONENT ========== */
+    class VitaminkaWidget extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: 'open' });
+        this.open = false;
+        this.riveInstance = null;
+        this.session = getSession();
+      }
+
+      connectedCallback() {
+        this.renderLauncher();
+      }
+
+      /* --- Кнопка-запуск --- */
+      renderLauncher() {
+        this.shadowRoot.innerHTML = `
+          <style>
+            .launcher {
+              position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+              width: 60px; height: 60px; border-radius: 50%;
+              background: linear-gradient(135deg, #3498db, #2c3e50);
+              border: none; cursor: pointer; box-shadow: 0 4px 20px rgba(52,152,219,0.5);
+              display: flex; align-items: center; justify-content: center;
+              font-size: 26px; transition: transform 0.2s, box-shadow 0.2s;
+              animation: pulse 2.5s infinite;
+            }
+            .launcher:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(52,152,219,0.7); }
+            @keyframes pulse {
+              0%,100% { box-shadow: 0 4px 20px rgba(52,152,219,0.5); }
+              50%      { box-shadow: 0 4px 32px rgba(52,152,219,0.9); }
+            }
+          </style>
+          <button class="launcher" title="Открыть ассистента">💬</button>
+        `;
+        this.shadowRoot.querySelector('.launcher').addEventListener('click', () => this.openChat());
+      }
+
+      /* --- Открыть чат --- */
+      openChat() {
+        this.open = true;
+        this.renderChat();
+        this.loadRive();
+        setTimeout(() => this.addMessage('Привет! Я Vitaminka Assistant 👋 Чем могу помочь?', 'assistant', false), 400);
+      }
+
+      /* --- Рендер чата --- */
+      renderChat() {
+        this.shadowRoot.innerHTML = `
+          <style>
+            :host { --blue: #3498db; --dark: #2c3e50; --bg: #f0f4f8; }
+            * { box-sizing: border-box; }
+
+            .wrap {
+              position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+              width: 380px; height: 560px; border-radius: 20px;
+              background: white; box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+              display: flex; flex-direction: column; overflow: hidden;
+              animation: popIn .3s cubic-bezier(.34,1.56,.64,1);
+            }
+            @keyframes popIn {
+              from { transform: scale(0.85) translateY(20px); opacity: 0; }
+              to   { transform: scale(1) translateY(0); opacity: 1; }
+            }
+
+            /* --- Header --- */
+            .header {
+              background: linear-gradient(135deg, var(--blue), var(--dark));
+              padding: 14px 16px; display: flex; align-items: center; gap: 10px;
+            }
+            .header-avatar {
+              width: 38px; height: 38px; border-radius: 50%;
+              background: rgba(255,255,255,0.2);
+              display: flex; align-items: center; justify-content: center;
+              font-size: 20px; flex-shrink: 0;
+            }
+            .header-info { flex: 1; }
+            .header-name { color: white; font-weight: 700; font-size: 14px; }
+            .header-status { color: rgba(255,255,255,0.75); font-size: 11px; }
+            .header-btns { display: flex; gap: 6px; }
+            .hbtn {
+              background: rgba(255,255,255,0.15); border: none; color: white;
+              width: 30px; height: 30px; border-radius: 8px; cursor: pointer;
+              font-size: 14px; display: flex; align-items: center; justify-content: center;
+              transition: background .2s;
+            }
+            .hbtn:hover { background: rgba(255,255,255,0.25); }
+
+            /* --- Avatar section --- */
+            .avatar-section {
+              height: 160px; position: relative; overflow: hidden;
+              background: linear-gradient(160deg, #e8f4fd 0%, #d1ecf1 100%);
+              display: flex; align-items: center; justify-content: center;
+            }
+            canvas.rive-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+            /* CSS персонаж (fallback + анимации состояний) */
+            .avatar-css {
+              position: relative; z-index: 2; pointer-events: none;
+              display: flex; flex-direction: column; align-items: center;
+            }
+            .av-head {
+              width: 70px; height: 70px; border-radius: 50%;
+              background: linear-gradient(135deg, #f9c74f, #f3722c);
+              position: relative; display: flex; align-items: center; justify-content: center;
+              box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+              transition: transform .3s;
+            }
+            .av-face { font-size: 36px; line-height: 1; }
+            .av-body {
+              width: 52px; height: 42px; border-radius: 26px 26px 10px 10px;
+              background: linear-gradient(135deg, #4cc9f0, #4361ee);
+              margin-top: -8px; box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+            }
+
+            /* Состояния */
+            .avatar-css.state-idle .av-head    { animation: idleFloat 2.5s ease-in-out infinite; }
+            .avatar-css.state-listening .av-head { animation: listenBob 0.5s ease-in-out infinite alternate; }
+            .avatar-css.state-thinking .av-face::after {
+              content: '💭'; position: absolute; top: -18px; right: -18px;
+              font-size: 18px; animation: thinkPop 0.6s ease-in-out infinite alternate;
+            }
+            .avatar-css.state-speaking .av-head { animation: speakShake 0.18s ease-in-out infinite alternate; }
+
+            @keyframes idleFloat   { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+            @keyframes listenBob   { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+            @keyframes thinkPop    { from { transform: scale(0.8); opacity: 0.7; } to { transform: scale(1.1); opacity: 1; } }
+            @keyframes speakShake  { from { transform: scaleY(0.96); } to { transform: scaleY(1.04); } }
+
+            /* Полоска состояния */
+            .state-bar {
+              position: absolute; bottom: 0; left: 0; right: 0; height: 4px;
+              background: rgba(0,0,0,0.05);
+            }
+            .state-fill {
+              height: 100%; background: var(--blue);
+              width: 0; transition: width .4s ease;
+            }
+
+            /* Лейбл состояния */
+            .state-label {
+              position: absolute; top: 10px; left: 12px;
+              background: rgba(255,255,255,0.85); border-radius: 20px;
+              padding: 3px 10px; font-size: 11px; color: var(--dark);
+              font-weight: 600; letter-spacing: .3px; backdrop-filter: blur(4px);
+              transition: opacity .3s;
+            }
+
+            .messages {
+              flex: 1; overflow-y: auto; padding: 14px 14px 6px;
+              display: flex; flex-direction: column; gap: 10px;
+              background: var(--bg);
+            }
+            .messages::-webkit-scrollbar { width: 4px; }
+            .messages::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+            .msg { display: flex; gap: 8px; animation: msgIn .25s ease-out; }
+            @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+            .msg.user { justify-content: flex-end; }
+            .bubble {
+              max-width: 72%; padding: 9px 13px; border-radius: 14px;
+              font-size: 13px; line-height: 1.45; word-break: break-word;
+            }
+            .msg.user   .bubble { background: var(--blue); color: white; border-bottom-right-radius: 3px; }
+            .msg.assistant .bubble { background: white; color: var(--dark); border: 1px solid #e0e7ef; border-bottom-left-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+
+            .typing { display: flex; gap: 4px; align-items: center; padding: 2px 0; }
+            .typing span { width: 7px; height: 7px; background: #aaa; border-radius: 50%; animation: dot 1.3s infinite; }
+            .typing span:nth-child(2) { animation-delay: .2s; }
+            .typing span:nth-child(3) { animation-delay: .4s; }
+            @keyframes dot { 0%,60%,100% { opacity:.25; } 30% { opacity:1; } }
+
+            /* --- Input --- */
+            .input-row {
+              padding: 10px 12px; background: white;
+              border-top: 1px solid #e8eef4; display: flex; gap: 8px; align-items: center;
+            }
+            .input-row input {
+              flex: 1; border: 1.5px solid #e0e7ef; border-radius: 20px;
+              padding: 9px 15px; font-size: 13px; outline: none;
+              transition: border-color .2s; font-family: inherit;
+            }
+            .input-row input:focus { border-color: var(--blue); }
+            .input-row input:disabled { background: #f8f9fa; }
+            .send-btn {
+              width: 38px; height: 38px; border-radius: 50%; border: none;
+              background: var(--blue); color: white; font-size: 16px;
+              cursor: pointer; display: flex; align-items: center; justify-content: center;
+              transition: background .2s, transform .15s; flex-shrink: 0;
+            }
+            .send-btn:hover { background: #2980b9; transform: scale(1.07); }
+            .send-btn:disabled { background: #bdc3c7; cursor: not-allowed; transform: none; }
+          </style>
+
+          <div class="wrap">
+            <!-- Header -->
+            <div class="header">
+              <div class="header-avatar">🤖</div>
+              <div class="header-info">
+                <div class="header-name">Vitaminka Assistant</div>
+                <div class="header-status" id="status-text">● Онлайн</div>
+              </div>
+              <div class="header-btns">
+                <button class="hbtn close-btn" title="Закрыть">✕</button>
+              </div>
+            </div>
+
+            <!-- Avatar -->
+            <div class="avatar-section">
+              <canvas class="rive-canvas" id="rive-canvas"></canvas>
+              <div class="avatar-css state-idle" id="av">
+                <div class="av-head"><span class="av-face">😊</span></div>
+                <div class="av-body"></div>
+              </div>
+              <div class="state-label" id="state-label">Готов помочь</div>
+              <div class="state-bar"><div class="state-fill" id="state-fill"></div></div>
+            </div>
+
+            <!-- Messages -->
+            <div class="messages" id="messages"></div>
+
+            <!-- Input -->
+            <div class="input-row">
+              <input type="text" id="msg-input" placeholder="Напишите вопрос о товарах…" />
+              <button class="send-btn" id="send-btn">➤</button>
+            </div>
+          </div>
+        `;
+
+        /* listeners */
+        this.shadowRoot.querySelector('.close-btn').addEventListener('click', () => this.closeChat());
+        this.shadowRoot.querySelector('#send-btn').addEventListener('click', () => this.sendMessage());
+        this.shadowRoot.querySelector('#msg-input').addEventListener('keydown', e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.sendMessage(); }
+        });
+      }
+
+      closeChat() {
+        if (this.riveInstance) { try { this.riveInstance.cleanup(); } catch (_) {} this.riveInstance = null; }
+        this.renderLauncher();
+        this.open = false;
+      }
+
+      /* --- Rive --- */
+      loadRive() {
+        const s = document.createElement('script');
+        s.src = RIVE_CDN;
+        s.onload = () => {
+          try {
+            const canvas = this.shadowRoot.querySelector('#rive-canvas');
+            if (!canvas || !window.Rive) return;
+            const r = new window.Rive({
+              src: RIVE_FILE,
+              canvas,
+              autoplay: true,
+              stateMachines: 'State Machine 1',
+              onLoad: () => {
+                this.riveInstance = r;
+                // CSS аватар прячем если Rive загрузился
+                const av = this.shadowRoot.querySelector('#av');
+                if (av) av.style.opacity = '0';
+              },
+              onLoadError: () => { /* fallback остаётся видимым */ }
+            });
+          } catch (_) {}
+        };
+        document.head.appendChild(s);
+      }
+
+      /* --- Состояния --- */
+      setState(state) {
+        const av = this.shadowRoot.querySelector('#av');
+        const label = this.shadowRoot.querySelector('#state-label');
+        const fill  = this.shadowRoot.querySelector('#state-fill');
+        const status = this.shadowRoot.querySelector('#status-text');
+
+        const map = {
+          idle:      { cls: 'state-idle',      face: '😊', lbl: 'Готов помочь', fill: '20%',  status: '● Онлайн' },
+          listening: { cls: 'state-listening', face: '👂', lbl: 'Слушаю…',      fill: '50%',  status: '● Слушаю…' },
+          thinking:  { cls: 'state-thinking',  face: '🤔', lbl: 'Думаю…',       fill: '75%',  status: '● Печатает…' },
+          speaking:  { cls: 'state-speaking',  face: '😄', lbl: 'Говорю!',      fill: '100%', status: '● Отвечает' },
+        };
+        const cfg = map[state] || map.idle;
+
+        if (av) {
+          av.className = `avatar-css ${cfg.cls}`;
+          const face = av.querySelector('.av-face');
+          if (face) face.textContent = cfg.face;
+        }
+        if (label) label.textContent = cfg.lbl;
+        if (fill)  fill.style.width  = cfg.fill;
+        if (status) status.textContent = cfg.status;
+
+        // Rive state machine
+        if (this.riveInstance) {
+          try {
+            const inputs = this.riveInstance.stateMachineInputs('State Machine 1');
+            const si = inputs && inputs.find(i => i.name.toLowerCase() === 'state');
+            if (si) si.value = { idle:0, listening:1, thinking:2, speaking:3 }[state] ?? 0;
+          } catch (_) {}
+        }
+      }
+
+      /* --- Сообщения --- */
+      addMessage(text, role) {
+        const container = this.shadowRoot.querySelector('#messages');
+        if (!container) return;
+        const el = document.createElement('div');
+        el.className = `msg ${role}`;
+        el.innerHTML = `<div class="bubble">${this.esc(text)}</div>`;
+        container.appendChild(el);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      showTyping() {
+        const container = this.shadowRoot.querySelector('#messages');
+        if (!container) return;
+        const el = document.createElement('div');
+        el.className = 'msg assistant'; el.id = 'typing-msg';
+        el.innerHTML = `<div class="bubble"><div class="typing"><span></span><span></span><span></span></div></div>`;
+        container.appendChild(el);
+        container.scrollTop = container.scrollHeight;
+      }
+
+      removeTyping() {
+        const el = this.shadowRoot.querySelector('#typing-msg');
+        if (el) el.remove();
+      }
+
+      async sendMessage() {
+        const input = this.shadowRoot.querySelector('#msg-input');
+        const sendBtn = this.shadowRoot.querySelector('#send-btn');
+        const text = input.value.trim();
+        if (!text) return;
+
+        input.value = '';
+        input.disabled = true;
+        sendBtn.disabled = true;
+
+        this.addMessage(text, 'user');
+        this.setState('listening');
+        await new Promise(r => setTimeout(r, 300));
+        this.setState('thinking');
+        this.showTyping();
+
+        const reply = await mockFetch(text);
+
+        this.removeTyping();
+        this.setState('speaking');
+        this.addMessage(reply, 'assistant');
+
+        setTimeout(() => this.setState('idle'), 3500);
+        input.disabled = false;
+        sendBtn.disabled = false;
+        input.focus();
+      }
+
+      esc(t) {
+        return t.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+      }
+    }
+
+    customElements.define('vitaminka-widget', VitaminkaWidget);
+
+    const widget = document.createElement('vitaminka-widget');
+    document.body.appendChild(widget);
+  })();
+  </script>
+</body>
+</html>

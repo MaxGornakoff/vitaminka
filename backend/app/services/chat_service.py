@@ -1,5 +1,8 @@
 import logging
 from typing import List, Dict
+from sqlalchemy.orm import Session
+
+from app.models.chat import ChatMessage, ChatSession
 
 logger = logging.getLogger(__name__)
 
@@ -8,6 +11,22 @@ class ChatService:
     Сервис для обработки чат-сообщений
     TODO: Интегрировать RAG и LLM
     """
+    def __init__(self, db: Session):
+        self.db = db
+    
+    def _get_or_create_session(self, shop_id: str, session_id: str) -> ChatSession:
+        session = (
+            self.db.query(ChatSession)
+            .filter(ChatSession.session_id == session_id)
+            .first()
+        )
+
+        if session is None:
+            session = ChatSession(shop_id=shop_id, session_id=session_id)
+            self.db.add(session)
+            self.db.flush()
+
+        return session
     
     async def process_message(self, shop_id: str, session_id: str, user_message: str) -> str:
         """
@@ -15,18 +34,39 @@ class ChatService:
         """
         logger.info(f"Processing message from {shop_id}: {user_message}")
         
-        # TODO: 
-        # 1. Получить контекст магазина
-        # 2. Поиск релевантных товаров (RAG)
-        # 3. Вызов LLM с контекстом
-        # 4. Сохранить в историю
-        
-        # Placeholder ответ
-        return f"Спасибо за вопрос: '{user_message}'. Я пока в разработке! 🚀"
+        self._get_or_create_session(shop_id=shop_id, session_id=session_id)
+
+        self.db.add(
+            ChatMessage(
+                session_id=session_id,
+                role="user",
+                content=user_message,
+            )
+        )
+
+        # Пока оставляем заглушку ответа, но сохраняем всю историю в БД.
+        assistant_message = f"Спасибо за вопрос: '{user_message}'. Я пока в разработке!"
+
+        self.db.add(
+            ChatMessage(
+                session_id=session_id,
+                role="assistant",
+                content=assistant_message,
+            )
+        )
+        self.db.commit()
+
+        return assistant_message
     
     async def get_chat_history(self, session_id: str) -> List[Dict]:
         """
         Получить историю диалога
         """
-        # TODO: Получить из БД
-        return []
+        messages = (
+            self.db.query(ChatMessage)
+            .filter(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at.asc())
+            .all()
+        )
+
+        return [{"role": m.role, "content": m.content} for m in messages]
