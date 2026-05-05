@@ -17,20 +17,46 @@ class LLMClient:
     def __init__(self):
         self.provider = (settings.LLM_PROVIDER or "cohere").lower()
 
-    def _build_system_prompt(self, shop_id: str) -> str:
-        return (
+    def _build_system_prompt(self, shop_id: str, products: List[Dict]) -> str:
+        prompt = (
             "Ты AI-консультант интернет-магазина. "
             "Отвечай вежливо, кратко и по делу на русском языке. "
             "Если данных недостаточно, честно скажи, что нужно уточнение. "
             f"Текущий магазин: {shop_id}."
         )
 
+        if products:
+            lines = []
+            for p in products[:5]:
+                price = p.get("price")
+                currency = p.get("currency") or "RUB"
+                price_text = f"{price} {currency}" if price is not None else "цена не указана"
+                category = p.get("category") or "без категории"
+                desc = (p.get("description") or "").strip()
+                if desc:
+                    lines.append(f"- {p.get('name')}: {price_text}; категория: {category}; описание: {desc}")
+                else:
+                    lines.append(f"- {p.get('name')}: {price_text}; категория: {category}")
+
+            prompt += (
+                " Используй товары ниже как контекст магазина и по возможности советуй из них. "
+                "Если подходящего товара нет в списке, так и скажи и попроси уточнение. "
+                "Товары:\n" + "\n".join(lines)
+            )
+        else:
+            prompt += " Сейчас каталог не загружен. Не выдумывай конкретные товары."
+
+        return prompt
+
     async def _generate_cohere(self, query: str, context: Dict) -> str:
         if not settings.COHERE_API_KEY:
             logger.warning("Cohere API key is not configured")
             return "Я пока не настроен: добавьте COHERE_API_KEY в .env файл."
 
-        system_prompt = self._build_system_prompt(context.get("shop_id", "unknown"))
+        system_prompt = self._build_system_prompt(
+            context.get("shop_id", "unknown"),
+            context.get("products", []),
+        )
 
         # Cohere v1 uses chat_history + message format
         history_items: List[Dict] = context.get("history", [])[-8:]

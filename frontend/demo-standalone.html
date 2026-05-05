@@ -60,23 +60,22 @@
       return id;
     }
 
-    /* ---- Mock API (без backend) ---- */
-    const mockReplies = [
-      'Привет! Я ваш виртуальный помощник. Чем могу помочь?',
-      'Отличный вопрос! У нас большой ассортимент товаров. Расскажите подробнее, что вас интересует?',
-      'Для вас я подберу оптимальный вариант. Какой у вас бюджет?',
-      'Этот товар сейчас в наличии и имеет отличные отзывы покупателей!',
-      'Хотите, я покажу похожие товары в других ценовых категориях?',
-      'Доставка по городу занимает 1–2 дня, по России — до 7 дней.',
-      'Можете оформить заказ прямо сейчас — это займёт меньше минуты!',
-    ];
-    let replyIndex = 0;
+    /* ---- Real API ---- */
+    const API_BASE = 'http://localhost:8000';
 
-    async function mockFetch(message) {
-      await new Promise(r => setTimeout(r, 900 + Math.random() * 600));
-      const reply = mockReplies[replyIndex % mockReplies.length];
-      replyIndex++;
-      return reply;
+    async function mockFetch(message, sessionId) {
+      const response = await fetch(`${API_BASE}/api/chat/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shop_id: SHOP_ID,
+          session_id: sessionId,
+          message: message,
+        }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      return data.content || data.message || 'Не удалось получить ответ.';
     }
 
     /* ========== WEB COMPONENT ========== */
@@ -424,7 +423,12 @@
         this.setState('thinking');
         this.showTyping();
 
-        const reply = await mockFetch(text);
+        let reply;
+        try {
+          reply = await mockFetch(text, this.session);
+        } catch (e) {
+          reply = 'Не удалось подключиться к серверу. Проверьте, что backend запущен на localhost:8000.';
+        }
 
         this.removeTyping();
         this.setState('speaking');
