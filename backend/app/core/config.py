@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str = "admin"
     ADMIN_PASSWORD: str = "change-me-in-production"
 
+    # Catalog auto-sync
+    CATALOG_SYNC_INTERVAL_HOURS: int = 6
+
     # CORS — принимается как строка и разбивается по запятой
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:5173"
     

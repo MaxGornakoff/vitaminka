@@ -4,7 +4,7 @@
 
 (function() {
   const API_URL = window.VITAMINKA_API_URL || 'http://localhost:8000';
-  const SHOP_ID = window.VITAMINKA_SHOP_ID || 'default';
+  const SHOP_ID = window.VITAMINKA_SHOP_ID || 'test_vitaminof';
   const RIVE_FILE = window.VITAMINKA_RIVE_FILE || 'https://cdn.rive.app/animations/vehicle.riv';
   
   // Загружаем Rive SDK

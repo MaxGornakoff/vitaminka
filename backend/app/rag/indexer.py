@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Dict, List
 
 import chromadb
@@ -7,6 +8,10 @@ import httpx
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+MAX_EMBED_BATCH_SIZE = 96
+MAX_DOCUMENT_LENGTH = 4000
+MAX_EMBED_RETRIES = 3
 
 
 class ProductIndexer:
@@ -25,11 +30,13 @@ class ProductIndexer:
     def _to_document(product: Dict) -> str:
         name = product.get("name") or ""
         description = product.get("description") or ""
+        vendor = product.get("vendor") or ""
         category = product.get("category") or ""
         price = product.get("price")
         currency = product.get("currency") or "RUB"
         price_text = f"{price} {currency}" if price is not None else ""
-        return " | ".join([part for part in [name, description, category, price_text] if part])
+        document = " | ".join([part for part in [name, vendor, description, category, price_text] if part])
+        return document[:MAX_DOCUMENT_LENGTH]
 
     async def _embed_texts(self, texts: List[str], input_type: str) -> List[List[float]]:
         if not settings.COHERE_API_KEY:
@@ -46,10 +53,21 @@ class ProductIndexer:
         }
 
         timeout = httpx.Timeout(30.0)
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post("https://api.cohere.ai/v1/embed", headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
+        last_error: Exception | None = None
+        for attempt in range(MAX_EMBED_RETRIES):
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.post("https://api.cohere.ai/v1/embed", headers=headers, json=payload)
+            if response.status_code != 429:
+                response.raise_for_status()
+                data = response.json()
+                break
+
+            last_error = RuntimeError(f"Cohere rate limited embeddings request: {response.text}")
+            if attempt == MAX_EMBED_RETRIES - 1:
+                raise last_error
+            await asyncio.sleep(2 ** attempt)
+        else:
+            raise last_error or RuntimeError("Unknown embedding error")
 
         embeddings = data.get("embeddings", [])
         if not embeddings:
@@ -85,6 +103,7 @@ class ProductIndexer:
                 "external_id": external_id,
                 "name": product.get("name") or "",
                 "description": product.get("description") or "",
+                "vendor": product.get("vendor") or "",
                 "category": product.get("category") or "",
                 "currency": product.get("currency") or "RUB",
                 "url": product.get("url") or "",
@@ -97,7 +116,15 @@ class ProductIndexer:
             documents.append(doc)
             metadatas.append(metadata)
 
-        embeddings = await self._embed_texts(documents, input_type="search_document")
+        embeddings: List[List[float]] = []
+        batch_ranges = list(range(0, len(documents), MAX_EMBED_BATCH_SIZE))
+        for batch_idx, start in enumerate(batch_ranges):
+            batch = documents[start:start + MAX_EMBED_BATCH_SIZE]
+            if batch_idx > 0:
+                logger.info(f"Waiting 65s before next embedding batch ({batch_idx + 1}/{len(batch_ranges)}) to avoid rate limit...")
+                await asyncio.sleep(65)
+            embeddings.extend(await self._embed_texts(batch, input_type="search_document"))
+
         self.collection.upsert(
             ids=ids,
             documents=documents,
@@ -128,6 +155,7 @@ class ProductIndexer:
                 {
                     "name": meta.get("name") or "",
                     "description": meta.get("description") or "",
+                    "vendor": meta.get("vendor") or "",
                     "price": meta.get("price"),
                     "currency": meta.get("currency") or "RUB",
                     "category": meta.get("category") or "",

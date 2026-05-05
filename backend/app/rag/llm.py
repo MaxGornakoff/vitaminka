@@ -37,20 +37,24 @@ class LLMClient:
                 currency = p.get("currency") or "RUB"
                 price_text = f"{price} {currency}" if price is not None else "цена не указана"
                 category = p.get("category") or "без категории"
+                vendor = (p.get("vendor") or "").strip()
                 desc = (p.get("description") or "").strip()
                 url = (p.get("url") or "").strip()
+                vendor_text = f"; бренд: {vendor}" if vendor else ""
                 if desc:
                     lines.append(
-                        f"- {p.get('name')}: {price_text}; категория: {category}; описание: {desc}; ссылка: {url or 'нет'}"
+                        f"- {p.get('name')}{vendor_text}: {price_text}; категория: {category}; описание: {desc}; ссылка: {url or 'нет'}"
                     )
                 else:
                     lines.append(
-                        f"- {p.get('name')}: {price_text}; категория: {category}; ссылка: {url or 'нет'}"
+                        f"- {p.get('name')}{vendor_text}: {price_text}; категория: {category}; ссылка: {url or 'нет'}"
                     )
 
             prompt += (
-                " Используй товары ниже как контекст магазина и по возможности советуй из них. "
-                "Если подходящего товара нет в списке, так и скажи и попроси уточнение. "
+                " Товары в списке ниже — это реальные товары из каталога магазина, они ЕСТЬ в наличии. "
+                "Если пользователь спрашивает о бренде или категории товаров, которые присутствуют в списке — подтверди наличие и помоги с выбором, задай уточняющие вопросы (вкус, объём, цель и т.п.). "
+                "Никогда не говори 'такого товара нет', если он или похожий есть в списке ниже. "
+                "Если список пуст или ни один товар реально не подходит — вежливо попроси уточнить запрос. "
                 "Товары:\n" + "\n".join(lines)
             )
         else:
@@ -91,7 +95,7 @@ class LLMClient:
             "Content-Type": "application/json",
         }
 
-        timeout = httpx.Timeout(30.0)
+        timeout = httpx.Timeout(12.0)
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(self.COHERE_API_URL, headers=headers, json=payload)
             response.raise_for_status()

@@ -17,6 +17,7 @@ class Product(Base):
     price = Column(Float, nullable=True)
     currency = Column(String(10), default="RUB")
     
+    vendor = Column(String(255), nullable=True)
     category = Column(String(255), nullable=True)
     url = Column(Text, nullable=True)
     image_url = Column(Text, nullable=True)

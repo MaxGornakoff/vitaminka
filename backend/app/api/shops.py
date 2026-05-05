@@ -10,6 +10,7 @@ from app.models.product import Product
 from app.models.shop import Shop
 from app.rag.indexer import ProductIndexer
 from app.core.config import settings
+from app.services.feed_sync import sync_shop_catalog
 
 router = APIRouter()
 
@@ -20,6 +21,7 @@ class ShopRegisterRequest(BaseModel):
     catalog_url: str
     manager_phone: Optional[str] = None
     assistant_name: Optional[str] = "Ассистент"
+    catalog_sync_interval_hours: Optional[int] = None
 
 class ShopResponse(BaseModel):
     shop_id: str
@@ -58,6 +60,7 @@ class ShopUpdateRequest(BaseModel):
     catalog_url: Optional[str] = None
     manager_phone: Optional[str] = None
     assistant_name: Optional[str] = None
+    catalog_sync_interval_hours: Optional[int] = None
     is_active: Optional[bool] = None
 
 
@@ -105,6 +108,7 @@ async def register_shop(
             catalog_url=request.catalog_url,
             manager_phone=request.manager_phone,
             assistant_name=request.assistant_name,
+            catalog_sync_interval_hours=request.catalog_sync_interval_hours,
             api_key=api_key,
             is_active=True,
         )
@@ -236,3 +240,38 @@ async def upload_catalog(
         uploaded=len(product_rows),
         total_products=total_products,
     )
+
+
+class SyncResponse(BaseModel):
+    shop_id: str
+    synced: int
+    catalog_url: str
+
+
+@router.post("/{shop_id}/catalog/sync", response_model=SyncResponse)
+async def sync_catalog_from_feed(
+    shop_id: str,
+    db: Session = Depends(get_db),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+):
+    """
+    Синхронизировать каталог из внешнего JSON-фида (Яндекс.Маркет и совместимые).
+    Использует catalog_url из настроек магазина.
+    """
+    shop = _get_shop_or_404(db, shop_id)
+    _validate_api_key(shop, x_api_key)
+
+    if not shop.catalog_url:
+        raise HTTPException(
+            status_code=400,
+            detail="У магазина не задан catalog_url. Укажите его в настройках магазина."
+        )
+
+    try:
+        result = await sync_shop_catalog(shop, db)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return SyncResponse(shop_id=shop_id, synced=result.synced_count, catalog_url=shop.catalog_url)

@@ -48,6 +48,7 @@ class ChatService:
                 conditions.extend(
                     [
                         Product.name.ilike(pattern),
+                        Product.vendor.ilike(pattern),
                         Product.description.ilike(pattern),
                         Product.category.ilike(pattern),
                     ]
@@ -63,6 +64,7 @@ class ChatService:
         return [
             {
                 "name": p.name,
+                "vendor": p.vendor or "",
                 "description": p.description or "",
                 "price": p.price,
                 "currency": p.currency,
@@ -71,6 +73,123 @@ class ChatService:
             }
             for p in products
         ]
+
+    @staticmethod
+    def _is_llm_error_reply(reply: str) -> bool:
+        text = (reply or "").lower()
+        return (
+            "сейчас не удалось получить ответ от ai" in text
+            or "попробуйте еще раз чуть позже" in text
+        )
+
+    @staticmethod
+    def _is_negative_availability_reply(reply: str) -> bool:
+        text = (reply or "").lower()
+        negative_markers = [
+            "нет товара",
+            "нет в магазине",
+            "не представлен",
+            "не найден",
+            "к сожалению, в текущем магазине нет",
+        ]
+        return any(marker in text for marker in negative_markers)
+
+    @staticmethod
+    def _extract_brand_from_query(query: str) -> str | None:
+        q = (query or "").strip()
+        if not q:
+            return None
+
+        match = re.search(r"(?:бренд[а]?|от)\s+([A-Za-zА-Яа-я0-9\-\+\. ]{2,40})", q, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip(" ?!,.\"'")
+
+        upper_tokens = re.findall(r"\b[A-Z][A-Z0-9\-\+\.]{1,}\b", q)
+        if upper_tokens:
+            return upper_tokens[0]
+
+        return None
+
+    def _build_products_fallback_reply(self, user_message: str, products: List[Dict]) -> str:
+        if not products:
+            return "Не нашел подходящих товаров в каталоге по этому запросу. Уточните, пожалуйста, бренд, форму или цель приема."
+
+        brand = self._extract_brand_from_query(user_message)
+        if brand:
+            brand_l = brand.lower()
+            matched = [
+                p
+                for p in products
+                if brand_l in (p.get("vendor") or "").lower() or brand_l in (p.get("name") or "").lower()
+            ]
+            if matched:
+                return (
+                    f"Да, товары бренда {brand} есть в наличии. "
+                    "Подскажите, пожалуйста, для какой цели подбираем: иммунитет, сон, ЖКТ, энергия или другое?"
+                )
+
+        return (
+            "Да, подходящие товары есть в наличии. "
+            "Уточните, пожалуйста, цель и предпочтения (дозировка, форма, бюджет), и я помогу выбрать лучший вариант."
+        )
+
+    @staticmethod
+    def _detect_query_intent(user_message: str) -> str:
+        text = (user_message or "").lower()
+        if re.search(r"протеин|whey|гейнер|изолят|казеин", text):
+            return "protein"
+        if re.search(r"омега|omega|рыбий жир", text):
+            return "omega"
+        if re.search(r"бад|добавк|витамин|минерал|магний|цинк|d3|b-?complex|5-htp", text):
+            return "supplements"
+        return "generic"
+
+    @staticmethod
+    def _detect_products_intent(products: List[Dict]) -> str:
+        """Infer intent from top products when user query is too generic."""
+        if not products:
+            return "generic"
+
+        corpus_parts: List[str] = []
+        for p in products[:5]:
+            corpus_parts.append((p.get("category") or "").lower())
+            corpus_parts.append((p.get("name") or "").lower())
+            corpus_parts.append((p.get("description") or "").lower())
+        corpus = " ".join(corpus_parts)
+
+        if re.search(r"протеин|whey|гейнер|изолят|казеин", corpus):
+            return "protein"
+        if re.search(r"омега|omega|рыбий жир", corpus):
+            return "omega"
+        if re.search(r"бад|добавк|витамин|минерал|магний|цинк|аминокислот|5-htp|tryptophan|enzym", corpus):
+            return "supplements"
+        return "generic"
+
+    @staticmethod
+    def _build_followup_question(user_message: str, products: List[Dict]) -> str:
+        intent = ChatService._detect_query_intent(user_message)
+        if intent == "generic":
+            intent = ChatService._detect_products_intent(products)
+
+        if intent == "protein":
+            return "Подскажите, пожалуйста, какой вкус, объем и цель приема вам подходят (набор массы, поддержание или восстановление)?"
+        if intent == "omega":
+            return "Уточните, пожалуйста, какой процент EPA/DHA и формат вам удобнее: 60%, 70% или 90%, и какое количество капсул?"
+        if intent == "supplements":
+            return "Уточните, пожалуйста, цель приема и предпочтения по форме (капсулы/таблетки), а также желаемую дозировку?"
+        return "Подскажите, пожалуйста, для какой цели подбираем товар и какой у вас ориентир по бюджету?"
+
+    @staticmethod
+    def _has_question(text: str) -> bool:
+        return "?" in (text or "")
+
+    def _ensure_followup_question(self, reply: str, user_message: str, products: List[Dict]) -> str:
+        if not products:
+            return reply
+        if self._has_question(reply):
+            return reply
+        followup = self._build_followup_question(user_message, products)
+        return f"{reply.rstrip()}\n\n{followup}"
 
     @staticmethod
     def _has_url(text: str) -> bool:
@@ -184,6 +303,14 @@ class ChatService:
             query=user_message,
             context=context,
         )
+
+        if relevant_products and (
+            self._is_llm_error_reply(assistant_message)
+            or self._is_negative_availability_reply(assistant_message)
+        ):
+            assistant_message = self._build_products_fallback_reply(user_message, relevant_products)
+
+        assistant_message = self._ensure_followup_question(assistant_message, user_message, relevant_products)
         assistant_message = self._ensure_links_in_reply(assistant_message, relevant_products)
         assistant_message = self._ensure_manager_phone(assistant_message, manager_phone)
 
