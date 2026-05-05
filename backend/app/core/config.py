@@ -25,7 +25,18 @@ class Settings(BaseSettings):
     # Cohere
     COHERE_API_KEY: str = ""
     COHERE_MODEL: str = "command-r-plus-08-2024"
+
+    # Embeddings + RAG
+    COHERE_EMBED_MODEL: str = "embed-multilingual-v3.0"
+    CHROMA_PERSIST_DIR: str = "/app/chroma"
+    CHROMA_COLLECTION_NAME: str = "products"
+    RAG_TOP_K: int = 5
     
+    # Admin
+    ADMIN_SECRET: str = "change-me-in-production"
+    ADMIN_USERNAME: str = "admin"
+    ADMIN_PASSWORD: str = "change-me-in-production"
+
     # CORS — принимается как строка и разбивается по запятой
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:5173"
     

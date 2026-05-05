@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -8,6 +8,8 @@ import uuid
 from app.db.session import get_db
 from app.models.product import Product
 from app.models.shop import Shop
+from app.rag.indexer import ProductIndexer
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -16,11 +18,15 @@ class ShopRegisterRequest(BaseModel):
     name: str
     domain: str
     catalog_url: str
+    manager_phone: Optional[str] = None
+    assistant_name: Optional[str] = "Ассистент"
 
 class ShopResponse(BaseModel):
     shop_id: str
     name: str
     domain: str
+    manager_phone: Optional[str] = None
+    assistant_name: Optional[str] = None
     api_key: str
 
 
@@ -45,11 +51,47 @@ class CatalogUploadResponse(BaseModel):
     uploaded: int
     total_products: int
 
+
+class ShopUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    domain: Optional[str] = None
+    catalog_url: Optional[str] = None
+    manager_phone: Optional[str] = None
+    assistant_name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+def _get_shop_or_404(db: Session, shop_id: str) -> Shop:
+    shop = db.query(Shop).filter(Shop.shop_id == shop_id).first()
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    return shop
+
+
+def _validate_api_key(shop: Shop, x_api_key: str | None) -> None:
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="X-API-Key header is required")
+    if x_api_key != shop.api_key:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+
+
+def _validate_admin_secret(x_admin_secret: str | None) -> None:
+    if not x_admin_secret:
+        raise HTTPException(status_code=401, detail="X-Admin-Secret header is required")
+    if x_admin_secret != settings.ADMIN_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid admin secret")
+
+
 @router.post("/register", response_model=ShopResponse)
-async def register_shop(request: ShopRegisterRequest, db: Session = Depends(get_db)):
+async def register_shop(
+    request: ShopRegisterRequest,
+    db: Session = Depends(get_db),
+    x_admin_secret: Optional[str] = Header(default=None),
+):
     """
     Зарегистрировать новый магазин
     """
+    _validate_admin_secret(x_admin_secret)
     try:
         existing_shop = db.query(Shop).filter(Shop.shop_id == request.shop_id).first()
         if existing_shop:
@@ -61,6 +103,8 @@ async def register_shop(request: ShopRegisterRequest, db: Session = Depends(get_
             name=request.name,
             domain=request.domain,
             catalog_url=request.catalog_url,
+            manager_phone=request.manager_phone,
+            assistant_name=request.assistant_name,
             api_key=api_key,
             is_active=True,
         )
@@ -71,6 +115,8 @@ async def register_shop(request: ShopRegisterRequest, db: Session = Depends(get_
             shop_id=shop.shop_id,
             name=shop.name,
             domain=shop.domain,
+            manager_phone=shop.manager_phone,
+            assistant_name=shop.assistant_name,
             api_key=api_key
         )
     except Exception as e:
@@ -83,27 +129,60 @@ async def get_shop(shop_id: str, db: Session = Depends(get_db)):
     """
     Получить информацию о магазине
     """
-    shop = db.query(Shop).filter(Shop.shop_id == shop_id).first()
-    if not shop:
-        raise HTTPException(status_code=404, detail="Shop not found")
+    shop = _get_shop_or_404(db, shop_id)
 
     return {
         "shop_id": shop.shop_id,
         "name": shop.name,
         "domain": shop.domain,
+        "manager_phone": shop.manager_phone,        "assistant_name": shop.assistant_name,        "assistant_name": shop.assistant_name,
+        "catalog_url": shop.catalog_url,
+        "is_active": shop.is_active,
+    }
+
+
+@router.patch("/{shop_id}")
+async def update_shop(
+    shop_id: str,
+    request: ShopUpdateRequest,
+    db: Session = Depends(get_db),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+):
+    """
+    Обновить настройки магазина (требует X-API-Key)
+    """
+    shop = _get_shop_or_404(db, shop_id)
+    _validate_api_key(shop, x_api_key)
+
+    updates = request.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(shop, field, value)
+
+    db.commit()
+    db.refresh(shop)
+
+    return {
+        "shop_id": shop.shop_id,
+        "name": shop.name,
+        "domain": shop.domain,
+        "manager_phone": shop.manager_phone,
         "catalog_url": shop.catalog_url,
         "is_active": shop.is_active,
     }
 
 
 @router.post("/{shop_id}/catalog", response_model=CatalogUploadResponse)
-async def upload_catalog(shop_id: str, request: CatalogUploadRequest, db: Session = Depends(get_db)):
+async def upload_catalog(
+    shop_id: str,
+    request: CatalogUploadRequest,
+    db: Session = Depends(get_db),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+):
     """
     Загрузить каталог товаров магазина
     """
-    shop = db.query(Shop).filter(Shop.shop_id == shop_id).first()
-    if not shop:
-        raise HTTPException(status_code=404, detail="Shop not found")
+    shop = _get_shop_or_404(db, shop_id)
+    _validate_api_key(shop, x_api_key)
 
     if request.replace_existing:
         db.query(Product).filter(Product.shop_id == shop_id).delete(synchronize_session=False)
@@ -127,6 +206,26 @@ async def upload_catalog(shop_id: str, request: CatalogUploadRequest, db: Sessio
 
     if product_rows:
         db.add_all(product_rows)
+
+    indexer_payload = [
+        {
+            "external_id": p.external_id,
+            "name": p.name,
+            "description": p.description,
+            "price": p.price,
+            "currency": p.currency,
+            "category": p.category,
+            "url": p.url,
+        }
+        for p in product_rows
+    ]
+
+    indexer = ProductIndexer()
+    await indexer.index_products(
+        shop_id=shop_id,
+        products=indexer_payload,
+        replace_existing=request.replace_existing,
+    )
 
     shop.last_indexed = datetime.utcnow()
     db.commit()

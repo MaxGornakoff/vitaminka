@@ -241,6 +241,7 @@
               max-width: 72%; padding: 9px 13px; border-radius: 14px;
               font-size: 13px; line-height: 1.45; word-break: break-word;
             }
+            .bubble a { color: #1a73e8; text-decoration: underline; }
             .msg.user   .bubble { background: var(--blue); color: white; border-bottom-right-radius: 3px; }
             .msg.assistant .bubble { background: white; color: var(--dark); border: 1px solid #e0e7ef; border-bottom-left-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 
@@ -387,7 +388,10 @@
         if (!container) return;
         const el = document.createElement('div');
         el.className = `msg ${role}`;
-        el.innerHTML = `<div class="bubble">${this.esc(text)}</div>`;
+        const bubbleContent = role === 'assistant'
+          ? this.formatAssistantContent(text)
+          : this.esc(text);
+        el.innerHTML = `<div class="bubble">${bubbleContent}</div>`;
         container.appendChild(el);
         container.scrollTop = container.scrollHeight;
       }
@@ -442,6 +446,17 @@
 
       esc(t) {
         return t.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+      }
+
+      formatAssistantContent(text) {
+        const escaped = this.esc(text || '');
+        const withLinks = escaped.replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+          return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+        });
+        return withLinks.replace(/(tel:\+?[0-9]{7,15})/g, (tel) => {
+          const phone = tel.replace(/^tel:/, '');
+          return `<a href="${tel}">${phone}</a>`;
+        });
       }
     }
 

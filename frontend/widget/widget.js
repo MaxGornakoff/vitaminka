@@ -36,6 +36,21 @@
       this.render();
       this.setupEventListeners();
       this.initRive();
+      this.loadShopSettings();
+    }
+
+    async loadShopSettings() {
+      try {
+        const res = await fetch(`${API_URL}/api/shops/${SHOP_ID}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.assistant_name) {
+          const titleEl = this.shadowRoot.querySelector('.header-title');
+          if (titleEl) titleEl.textContent = data.assistant_name;
+        }
+      } catch (e) {
+        // молча игнорируем — заголовок останется дефолтным
+      }
     }
 
     initRive() {
@@ -234,6 +249,11 @@
             word-wrap: break-word;
             font-size: 13px;
             line-height: 1.4;
+          }
+
+          .message-bubble a {
+            color: #1a73e8;
+            text-decoration: underline;
           }
 
           .message.user .message-bubble {
@@ -449,7 +469,10 @@
       const messagesContainer = this.shadowRoot.querySelector('.messages');
       const messageEl = document.createElement('div');
       messageEl.className = `message ${role}`;
-      messageEl.innerHTML = `<div class="message-bubble">${this.escapeHtml(content)}</div>`;
+      const bubbleContent = role === 'assistant'
+        ? this.formatAssistantContent(content)
+        : this.escapeHtml(content);
+      messageEl.innerHTML = `<div class="message-bubble">${bubbleContent}</div>`;
       messagesContainer.appendChild(messageEl);
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
       
@@ -485,6 +508,17 @@
         "'": '&#039;'
       };
       return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    formatAssistantContent(text) {
+      const escaped = this.escapeHtml(text || '');
+      const withLinks = escaped.replace(/(https?:\/\/[^\s<]+)/g, (url) => {
+        return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+      });
+      return withLinks.replace(/(tel:\+?[0-9]{7,15})/g, (tel) => {
+        const phone = tel.replace(/^tel:/, '');
+        return `<a href="${tel}">${phone}</a>`;
+      });
     }
   }
 

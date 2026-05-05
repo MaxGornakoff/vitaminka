@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.api import chat, health, shops
+from app.admin import create_admin
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -17,6 +19,12 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     lifespan=lifespan,
 )
+
+# Admin panel
+create_admin(app)
+
+# Session middleware (needed for admin auth)
+app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
 # CORS
 app.add_middleware(

@@ -12,11 +12,13 @@ class Shop(Base):
     shop_id = Column(String(100), unique=True, nullable=False, index=True)
     name = Column(String(255), nullable=False)
     domain = Column(String(255), nullable=True)
+    manager_phone = Column(String(30), nullable=True)
     description = Column(Text, nullable=True)
     api_key = Column(String(255), unique=True, nullable=False)
     is_active = Column(Boolean, default=True)
     
     catalog_url = Column(Text, nullable=True)  # URL каталога товаров
+    assistant_name = Column(String(255), nullable=True, default="Ассистент")  # Имя в UI виджета
     last_indexed = Column(DateTime, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)

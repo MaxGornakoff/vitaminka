@@ -17,13 +17,18 @@ class LLMClient:
     def __init__(self):
         self.provider = (settings.LLM_PROVIDER or "cohere").lower()
 
-    def _build_system_prompt(self, shop_id: str, products: List[Dict]) -> str:
+    def _build_system_prompt(self, shop_id: str, products: List[Dict], manager_phone: str | None) -> str:
         prompt = (
             "Ты AI-консультант интернет-магазина. "
             "Отвечай вежливо, кратко и по делу на русском языке. "
             "Если данных недостаточно, честно скажи, что нужно уточнение. "
+            "Если рекомендуешь конкретный товар, обязательно укажи прямую ссылку на него (URL). "
+            "Если упоминаешь менеджера, оператора или поддержку, обязательно добавляй контакт в формате tel:+79991234567. "
             f"Текущий магазин: {shop_id}."
         )
+
+        if manager_phone:
+            prompt += f" Телефон менеджера магазина: {manager_phone}."
 
         if products:
             lines = []
@@ -33,10 +38,15 @@ class LLMClient:
                 price_text = f"{price} {currency}" if price is not None else "цена не указана"
                 category = p.get("category") or "без категории"
                 desc = (p.get("description") or "").strip()
+                url = (p.get("url") or "").strip()
                 if desc:
-                    lines.append(f"- {p.get('name')}: {price_text}; категория: {category}; описание: {desc}")
+                    lines.append(
+                        f"- {p.get('name')}: {price_text}; категория: {category}; описание: {desc}; ссылка: {url or 'нет'}"
+                    )
                 else:
-                    lines.append(f"- {p.get('name')}: {price_text}; категория: {category}")
+                    lines.append(
+                        f"- {p.get('name')}: {price_text}; категория: {category}; ссылка: {url or 'нет'}"
+                    )
 
             prompt += (
                 " Используй товары ниже как контекст магазина и по возможности советуй из них. "
@@ -56,6 +66,7 @@ class LLMClient:
         system_prompt = self._build_system_prompt(
             context.get("shop_id", "unknown"),
             context.get("products", []),
+            context.get("manager_phone"),
         )
 
         # Cohere v1 uses chat_history + message format
