@@ -20,6 +20,20 @@ class ChatMessageResponse(BaseModel):
 class ChatHistoryResponse(BaseModel):
     messages: List[ChatMessageResponse]
 
+@router.get("/message")
+async def message_usage():
+    """
+    Подсказка по использованию endpoint /message
+    """
+    return {
+        "detail": "Use POST /api/chat/message with JSON body",
+        "example": {
+            "shop_id": "demo_shop_db",
+            "session_id": "sess_123",
+            "message": "Помоги подобрать витамины"
+        }
+    }
+
 @router.post("/message", response_model=ChatMessageResponse)
 async def send_message(request: ChatMessageRequest, db: Session = Depends(get_db)):
     """

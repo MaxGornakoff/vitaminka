@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
+
+    # LLM provider
+    LLM_PROVIDER: str = "cohere"
+
+    # Cohere
+    COHERE_API_KEY: str = ""
+    COHERE_MODEL: str = "command-r-plus-08-2024"
     
     # CORS — принимается как строка и разбивается по запятой
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8000,http://localhost:5173"
