@@ -37,6 +37,78 @@ class ChatService:
 
         return session
 
+    @staticmethod
+    def _build_llm_history(messages: List[ChatMessage], current_query: str, max_items: int = 12) -> List[Dict]:
+        """
+        Подготовить историю для LLM: только предыдущие реплики без дублирования текущего запроса.
+        """
+        history: List[Dict] = []
+        trimmed_query = (current_query or "").strip()
+
+        for m in messages:
+            role = (m.role or "").strip().lower()
+            content = (m.content or "").strip()
+            if role not in {"user", "assistant"} or not content:
+                continue
+            history.append({"role": role, "content": content})
+
+        # process_message уже сохраняет текущее сообщение в БД до генерации,
+        # поэтому удаляем его из истории, чтобы не дублировать с message=query.
+        if history and history[-1]["role"] == "user" and history[-1]["content"] == trimmed_query:
+            history.pop()
+
+        if max_items > 0:
+            return history[-max_items:]
+        return history
+
+    @staticmethod
+    def _looks_like_followup_query(query: str) -> bool:
+        text = (query or "").lower()
+        if not text:
+            return False
+
+        # Короткие уточнения обычно требуют контекста предыдущего вопроса.
+        followup_markers = [
+            "подешев",
+            "дороже",
+            "лучше",
+            "из них",
+            "из этого",
+            "а что",
+            "а какой",
+            "какой из",
+            "что из",
+            "этот",
+            "эта",
+            "эти",
+            "их",
+        ]
+        if any(marker in text for marker in followup_markers):
+            return True
+
+        return len(text.split()) <= 4
+
+    @staticmethod
+    def _build_search_query(user_message: str, history: List[Dict]) -> str:
+        query = (user_message or "").strip()
+        if not query:
+            return query
+        if not ChatService._looks_like_followup_query(query):
+            return query
+
+        # Ищем предыдущую пользовательскую реплику как тему для уточнения.
+        prev_user_message = ""
+        for item in reversed(history):
+            if (item.get("role") or "") == "user":
+                prev_user_message = (item.get("content") or "").strip()
+                if prev_user_message:
+                    break
+
+        if not prev_user_message:
+            return query
+
+        return f"{prev_user_message}. Уточнение: {query}"
+
     def _search_products_sql(self, shop_id: str, query: str, limit: int = 5) -> List[Dict]:
         tokens = [t.strip() for t in query.lower().split() if len(t.strip()) >= 3]
 
@@ -280,14 +352,16 @@ class ChatService:
             self.db.query(ChatMessage)
             .filter(ChatMessage.session_id == session_id)
             .order_by(ChatMessage.created_at.desc())
-            .limit(20)
+            .limit(30)
             .all()
         )
         recent_history.reverse()
+        llm_history = self._build_llm_history(recent_history, user_message, max_items=12)
+        search_query = self._build_search_query(user_message, llm_history)
 
         relevant_products = await self._search_products(
             shop_id=shop_id,
-            query=user_message,
+            query=search_query,
             limit=settings.RAG_TOP_K,
         )
 
@@ -295,7 +369,7 @@ class ChatService:
             "shop_id": shop_id,
             "session_id": session_id,
             "manager_phone": manager_phone,
-            "history": [{"role": m.role, "content": m.content} for m in recent_history],
+            "history": llm_history,
             "products": relevant_products,
         }
 
