@@ -1,21 +1,47 @@
 # Vitaminka — статус проекта
 
-## Текущее состояние системы (05.05.2026)
+## Текущее состояние системы (06.05.2026)
 
 | Компонент | Статус |
 |---|---|
 | Backend (FastAPI) | ✅ Порт 8000, hot-reload |
 | PostgreSQL | ✅ 792 товара `test_vitaminof`, vendor в БД |
-| ChromaDB | ✅ 797 документов, vendor в метадате |
+| ChromaDB (локально) | ✅ 797 документов, vendor в метадате |
+| ChromaDB (Render) | ⏳ Пустая — нужна индексация на проде |
 | Cohere embeddings | ✅ `embed-multilingual-v3.0`, батчи по 96 + пауза 65с |
 | Cohere LLM | ✅ `command-r-plus-08-2024`, timeout 12s + fallback |
 | Admin-панель | ✅ `/admin` — синхронизация + проверка ассистента |
 | Frontend demo | ✅ `test_vitaminof` |
-| Render.com | ⏳ Не развёрнут |
+| Render.com | ✅ Задеплоен: https://vitaminka.onrender.com |
+| Контекст диалога | ✅ Multi-turn, follow-up с query rewrite |
 
 ---
 
-## Сделано в сессии 05.05.2026
+## Сделано в сессии 06.05.2026
+
+- **Контекст диалога**: история предыдущих реплик передается в Cohere без дублирования текущего вопроса
+- **Query rewrite для follow-up**: короткие вопросы ("а что подешевле?") обогащаются предыдущим user-сообщением — поиск держит тему разговора
+- **Деплой на Render**: https://vitaminka.onrender.com
+  - Docker runtime, persistent disk для Chroma (`/var/data`)
+  - `start.sh` — автоматически применяет миграции перед стартом
+  - `render.yaml` — Blueprint для воспроизводимого деплоя
+  - CORS, env vars настроены
+- **Smoke test на проде**: health ✅, chat ✅, multi-turn контекст ✅
+- **CORS**: переведен на `settings.allowed_origins_list` вместо `"*"` в коде
+- **Release SOP**: добавлен в README как ultra-short чеклист
+
+---
+
+## Следующая сессия: что делать
+
+1. **Проиндексировать каталог на Render** — зайти в `/admin` на продакшене, запустить синхронизацию для `test_vitaminof`. После этого семантический поиск Chroma заработает на проде.
+2. **Зарегистрировать магазин vitaminof.ru на проде** через `/api/shops/register` или через `/admin`.
+3. **Протестировать виджет на реальном сайте** — вставить `<script>` на vitaminof.ru и проверить полный сценарий.
+4. **Заменить `ALLOWED_ORIGINS=*`** на реальный домен после подключения виджета к сайту.
+
+---
+
+## Идеи на следующую сессию
 
 - Исправлен парсер фида: поддержка XML/YML (Яндекс.Маркет), поле `<vendor>` передаётся в БД, ChromaDB и LLM
 - Добавлены миграции 0005 (sync/index timestamps) и 0006 (vendor)
