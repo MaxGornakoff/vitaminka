@@ -163,12 +163,12 @@
             align-items: center;
             justify-content: center;
             font-size: 26px;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: transform 0.2s;
             animation: pulse 2.5s infinite;
+            will-change: box-shadow;
           }
           .launcher:hover {
             transform: scale(1.1);
-            box-shadow: 0 6px 28px ${hexToRgba(THEME.blue, 0.7)};
           }
           @keyframes pulse {
             0%, 100% { box-shadow: 0 4px 20px ${hexToRgba(THEME.blue, 0.5)}; }
@@ -422,7 +422,7 @@
             transition: background .2s, transform .15s;
             flex-shrink: 0;
           }
-          .send-btn:hover { background: #2980b9; transform: scale(1.07); }
+          .send-btn:hover { background: var(--vk-dark); transform: scale(1.07); }
           .send-btn:disabled { background: #bdc3c7; cursor: not-allowed; transform: none; }
 
           @media (max-width: 520px) {
@@ -447,7 +447,7 @@
           </div>
 
           <div class="avatar-section">
-            <canvas class="rive-canvas" id="rive-canvas"></canvas>
+            <canvas class="rive-canvas" id="rive-canvas" style="display:none"></canvas>
             <div class="avatar-css state-idle" id="av">
               <div class="av-head"><span class="av-face">😊</span></div>
               <div class="av-body"></div>
@@ -489,7 +489,7 @@
     async openChat() {
       this.isOpen = true;
       this.renderChat();
-      this.loadRive();
+      // this.loadRive(); // Rive disabled
       await this.loadShopSettings();
       if (!this.greeted) {
         this.greeted = true;
