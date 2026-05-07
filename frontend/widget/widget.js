@@ -67,6 +67,14 @@
       this.isOpen = Boolean(window.VITAMINKA_START_OPEN);
       this.greeted = false;
       this.assistantName = LABELS.assistantName;
+      this._pageLoaded = document.readyState === 'complete';
+      this._settingsLoaded = false;
+      if (!this._pageLoaded) {
+        window.addEventListener('load', () => {
+          this._pageLoaded = true;
+          this._maybeShowLauncher();
+        }, { once: true });
+      }
     }
 
     _maybeShowLauncher() {
@@ -87,7 +95,11 @@
     async loadShopSettings() {
       try {
         const res = await fetch(`${API_URL}/api/shops/${SHOP_ID}`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          this._settingsLoaded = true;
+          this._maybeShowLauncher();
+          return;
+        }
         const data = await res.json();
         if (data.assistant_name && String(data.assistant_name).trim()) {
           this.assistantName = String(data.assistant_name).trim();
@@ -105,6 +117,8 @@
         this._maybeShowLauncher();
       } catch (_) {
         // Ignore silently, defaults are enough.
+        this._settingsLoaded = true;
+        this._maybeShowLauncher();
       }
     }
 
