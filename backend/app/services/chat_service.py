@@ -89,7 +89,7 @@ class ChatService:
         return len(text.split()) <= 4
 
     @staticmethod
-    def _build_search_query(user_message: str, history: List[Dict]) -> str:
+    def _build_search_query(user_message: str, history: List[Dict], active_vendor: str | None = None) -> str:
         query = (user_message or "").strip()
         if not query:
             return query
@@ -104,10 +104,55 @@ class ChatService:
                 if prev_user_message:
                     break
 
-        if not prev_user_message:
-            return query
+        if prev_user_message:
+            query = f"{prev_user_message}. Уточнение: {query}"
 
-        return f"{prev_user_message}. Уточнение: {query}"
+        if active_vendor and active_vendor.lower() not in query.lower():
+            query = f"{query}. Бренд: {active_vendor}"
+
+        return query
+
+    def _find_vendor_in_text(self, shop_id: str, text: str) -> str | None:
+        source = (text or "").lower()
+        if not source:
+            return None
+
+        vendor_rows = (
+            self.db.query(Product.vendor)
+            .filter(
+                Product.shop_id == shop_id,
+                Product.vendor.isnot(None),
+                Product.vendor != "",
+            )
+            .distinct()
+            .all()
+        )
+
+        vendors = [row[0].strip() for row in vendor_rows if row and row[0] and row[0].strip()]
+        if not vendors:
+            return None
+
+        # Берем самый длинный матч, чтобы корректно ловить бренды из 2-3 слов.
+        vendors.sort(key=len, reverse=True)
+        for vendor in vendors:
+            if vendor.lower() in source:
+                return vendor
+        return None
+
+    def _detect_active_vendor(self, shop_id: str, user_message: str, history: List[Dict]) -> str | None:
+        current_vendor = self._find_vendor_in_text(shop_id=shop_id, text=user_message)
+        if current_vendor:
+            return current_vendor
+
+        for item in reversed(history):
+            content = (item.get("content") or "").strip()
+            if not content:
+                continue
+            vendor = self._find_vendor_in_text(shop_id=shop_id, text=content)
+            if vendor:
+                return vendor
+
+        return None
 
     def _search_products_sql(self, shop_id: str, query: str, limit: int = 5) -> List[Dict]:
         tokens = [t.strip() for t in query.lower().split() if len(t.strip()) >= 3]
@@ -357,7 +402,8 @@ class ChatService:
         )
         recent_history.reverse()
         llm_history = self._build_llm_history(recent_history, user_message, max_items=12)
-        search_query = self._build_search_query(user_message, llm_history)
+        active_vendor = self._detect_active_vendor(shop_id=shop_id, user_message=user_message, history=llm_history)
+        search_query = self._build_search_query(user_message, llm_history, active_vendor=active_vendor)
 
         relevant_products = await self._search_products(
             shop_id=shop_id,
