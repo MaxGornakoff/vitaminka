@@ -202,12 +202,14 @@ class ChatService:
     @staticmethod
     def _is_negative_availability_reply(reply: str) -> bool:
         text = (reply or "").lower()
+        # Только очень конкретные фразы об отсутствии, чтобы не перехватить нейтральные ответы LLM.
+        # Используем проверку целых фраз, а не подстрок — иначе "не представлен" ловит слишком много.
         negative_markers = [
             "нет товара",
             "нет в магазине",
-            "не представлен",
-            "не найден",
             "к сожалению, в текущем магазине нет",
+            "такого товара у нас нет",
+            "данного товара нет",
         ]
         return any(marker in text for marker in negative_markers)
 
@@ -254,22 +256,18 @@ class ChatService:
                     "Отличный выбор: товары {brand} сейчас есть в каталоге.",
                 ]
                 opener = self._pick_variant(user_message, brand_openers).format(brand=brand)
-                return (
-                    f"{opener} "
-                    "Подскажите, пожалуйста, для какой цели подбираем: иммунитет, сон, ЖКТ, энергия или другое?"
-                )
+                followup = self._build_followup_question(user_message, matched)
+                return f"{opener} {followup}"
 
         generic_openers = [
-            "Да, подходящие товары есть в наличии.",
-            "Да, могу предложить несколько подходящих вариантов.",
-            "Есть хорошие варианты под ваш запрос.",
-            "Подобные товары у нас представлены в каталоге.",
+            "Да, подходящие варианты есть!",
+            "Есть несколько подходящих позиций.",
+            "Нашёл кое-что подходящее.",
+            "В каталоге есть хорошие варианты.",
         ]
         opener = self._pick_variant(user_message, generic_openers)
-        return (
-            f"{opener} "
-            "Уточните, пожалуйста, цель и предпочтения (дозировка, форма, бюджет), и я помогу выбрать лучший вариант."
-        )
+        followup = self._build_followup_question(user_message, products)
+        return f"{opener} {followup}"
 
     @staticmethod
     def _detect_query_intent(user_message: str) -> str:
