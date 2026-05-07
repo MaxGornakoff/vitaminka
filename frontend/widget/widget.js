@@ -28,7 +28,7 @@
       inputPlaceholder: 'Напишите вопрос о товарах…',
       openTitle: 'Открыть ассистента',
       closeTitle: 'Закрыть',
-      greeting: 'Привет! Я Vitaminka Assistant 👋 Чем могу помочь?',
+      greeting: 'Привет! Я {name} 👋 Чем могу помочь?',
       connectionError: 'Не удалось подключиться к серверу. Попробуйте еще раз чуть позже.',
     },
     window.VITAMINKA_LABELS || {}
@@ -57,11 +57,11 @@
 
     connectedCallback() {
       if (this.isOpen) {
-        this.openChat();
+        void this.openChat();
       } else {
         this.renderLauncher();
       }
-      this.loadShopSettings();
+      void this.loadShopSettings();
     }
 
     async loadShopSettings() {
@@ -404,15 +404,27 @@
       });
     }
 
-    openChat() {
+    _buildGreetingMessage() {
+      const template = String(LABELS.greeting || '').trim();
+      if (!template) {
+        return `Привет! Я ${this.assistantName} 👋 Чем могу помочь?`;
+      }
+      if (template.includes('{name}')) {
+        return template.replaceAll('{name}', this.assistantName);
+      }
+      return template;
+    }
+
+    async openChat() {
       this.isOpen = true;
       this.renderChat();
       this.loadRive();
+      await this.loadShopSettings();
       if (!this.greeted) {
         this.greeted = true;
-        setTimeout(() => this.addMessage(LABELS.greeting, 'assistant'), 300);
+        const greeting = this._buildGreetingMessage();
+        setTimeout(() => this.addMessage(greeting, 'assistant'), 300);
       }
-      this.loadShopSettings();
     }
 
     closeChat() {

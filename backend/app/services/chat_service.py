@@ -227,6 +227,13 @@ class ChatService:
 
         return None
 
+    @staticmethod
+    def _pick_variant(seed_text: str, variants: List[str]) -> str:
+        if not variants:
+            return ""
+        seed = sum(ord(ch) for ch in (seed_text or ""))
+        return variants[seed % len(variants)]
+
     def _build_products_fallback_reply(self, user_message: str, products: List[Dict]) -> str:
         if not products:
             return "Не нашел подходящих товаров в каталоге по этому запросу. Уточните, пожалуйста, бренд, форму или цель приема."
@@ -240,13 +247,27 @@ class ChatService:
                 if brand_l in (p.get("vendor") or "").lower() or brand_l in (p.get("name") or "").lower()
             ]
             if matched:
+                brand_openers = [
+                    "Да, товары бренда {brand} есть в наличии.",
+                    "Да, у нас доступны позиции от {brand}.",
+                    "Да, по бренду {brand} есть подходящие варианты.",
+                    "Отличный выбор: товары {brand} сейчас есть в каталоге.",
+                ]
+                opener = self._pick_variant(user_message, brand_openers).format(brand=brand)
                 return (
-                    f"Да, товары бренда {brand} есть в наличии. "
+                    f"{opener} "
                     "Подскажите, пожалуйста, для какой цели подбираем: иммунитет, сон, ЖКТ, энергия или другое?"
                 )
 
+        generic_openers = [
+            "Да, подходящие товары есть в наличии.",
+            "Да, могу предложить несколько подходящих вариантов.",
+            "Есть хорошие варианты под ваш запрос.",
+            "Подобные товары у нас представлены в каталоге.",
+        ]
+        opener = self._pick_variant(user_message, generic_openers)
         return (
-            "Да, подходящие товары есть в наличии. "
+            f"{opener} "
             "Уточните, пожалуйста, цель и предпочтения (дозировка, форма, бюджет), и я помогу выбрать лучший вариант."
         )
 
