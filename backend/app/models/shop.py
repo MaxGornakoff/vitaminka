@@ -28,6 +28,7 @@ class Shop(Base):
     widget_color_bg = Column(String(30), nullable=True)         # Фон области чата, напр. "#f0f4f8"
     widget_border_radius = Column(Integer, nullable=True)       # Скругление окна чата (px), напр. 20
     widget_custom_css = Column(Text, nullable=True)             # Произвольный CSS для Shadow DOM
+    widget_currency_symbol = Column(String(20), nullable=True)  # Символ валюты для цен, напр. "₽" или "руб."
     last_catalog_synced_at = Column(DateTime, nullable=True)
     last_catalog_indexed_at = Column(DateTime, nullable=True)
     

@@ -89,6 +89,7 @@ class ShopAdmin(ModelView, model=Shop):
         Shop.widget_color_bg,
         Shop.widget_border_radius,
         Shop.widget_custom_css,
+        Shop.widget_currency_symbol,
     ]
 
     column_labels = {
@@ -105,6 +106,7 @@ class ShopAdmin(ModelView, model=Shop):
         "widget_color_bg": "🎨 Фон области чата",
         "widget_border_radius": "🔲 Скругление углов окна (px)",
         "widget_custom_css": "💻 Кастомный CSS",
+        "widget_currency_symbol": "💰 Символ валюты (цены)",
         "api_key": "API Key",
         "last_indexed": "Последняя индексация",
         "last_catalog_synced_at": "Последняя синхронизация каталога",
@@ -123,6 +125,7 @@ class ShopAdmin(ModelView, model=Shop):
         "widget_color_secondary": {"placeholder": "#2c3e50"},
         "widget_color_bg": {"placeholder": "#f0f4f8"},
         "widget_border_radius": {"placeholder": "20"},
+        "widget_currency_symbol": {"placeholder": "₽"},
     }
 
     column_details_list = [
@@ -140,6 +143,7 @@ class ShopAdmin(ModelView, model=Shop):
         Shop.widget_color_bg,
         Shop.widget_border_radius,
         Shop.widget_custom_css,
+        Shop.widget_currency_symbol,
         Shop.last_indexed,
         Shop.last_catalog_synced_at,
         Shop.last_catalog_indexed_at,

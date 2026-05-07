@@ -44,6 +44,20 @@
     return id;
   }
 
+  function hexToRgba(hex, alpha) {
+    try {
+      const h = (hex || '').replace('#', '');
+      const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h;
+      const r = parseInt(full.slice(0, 2), 16);
+      const g = parseInt(full.slice(2, 4), 16);
+      const b = parseInt(full.slice(4, 6), 16);
+      if (isNaN(r) || isNaN(g) || isNaN(b)) throw new Error('bad hex');
+      return `rgba(${r},${g},${b},${alpha})`;
+    } catch (_) {
+      return `rgba(52,152,219,${alpha})`;
+    }
+  }
+
   class VitaminkaWidget extends HTMLElement {
     constructor() {
       super();
@@ -140,21 +154,21 @@
             background: linear-gradient(135deg, ${THEME.blue}, ${THEME.dark});
             border: none;
             cursor: pointer;
-            box-shadow: 0 4px 20px rgba(52, 152, 219, 0.5);
+            box-shadow: 0 4px 20px ${hexToRgba(THEME.blue, 0.5)};
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 26px;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: transform 0.2s;
             animation: pulse 2.5s infinite;
           }
           .launcher:hover {
             transform: scale(1.1);
-            box-shadow: 0 6px 28px rgba(52, 152, 219, 0.7);
+            box-shadow: 0 6px 28px ${hexToRgba(THEME.blue, 0.7)};
           }
           @keyframes pulse {
-            0%, 100% { box-shadow: 0 4px 20px rgba(52, 152, 219, 0.5); }
-            50% { box-shadow: 0 4px 32px rgba(52, 152, 219, 0.9); }
+            0%, 100% { box-shadow: 0 4px 20px ${hexToRgba(THEME.blue, 0.5)}; }
+            50% { box-shadow: 0 4px 32px ${hexToRgba(THEME.blue, 0.9)}; }
           }
         </style>
         <button class="launcher" title="${LABELS.openTitle}">${THEME.launcherIcon}</button>
@@ -346,7 +360,7 @@
           .bubble p { margin: 0 0 8px; }
           .bubble p:last-child { margin-bottom: 0; }
           .vk-list { margin: 4px 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
-          .vk-list li { padding: 7px 10px; background: #f1f6fb; border-radius: 8px; border-left: 3px solid var(--vk-blue); font-size: 12px; line-height: 1.4; }
+          .vk-list li { padding: 7px 10px; background: #f1f6fb; border-radius: 8px; font-size: 12px; line-height: 1.4; }
           .vk-list li a { font-weight: 600; }
           .vk-price { color: #64748b; font-size: 11px; }
           .msg.user .bubble {
@@ -693,6 +707,16 @@
           .filter(p => p.length > 0)
           .map(p => {
             let html = this.esc(p).replace(/\n/g, '<br>');
+            // Plain Russian phone numbers → tel: links (before tel: processing)
+            html = html.replace(
+              /(?<!["'=])((?:\+?[78])[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})(?![\d\-])/g,
+              (match) => {
+                const digits = match.replace(/\D/g, '');
+                const normalized = digits.startsWith('8') ? '+7' + digits.slice(1) : '+' + digits;
+                return `<a href="tel:${normalized}">${match}</a>`;
+              }
+            );
+            // tel: links already in text
             html = html.replace(/(tel:\+?[0-9]{7,15})/g, tel => {
               const phone = tel.replace(/^tel:/, '');
               return `<a href="${tel}">${phone}</a>`;

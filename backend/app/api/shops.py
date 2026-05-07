@@ -150,6 +150,7 @@ async def get_shop(shop_id: str, db: Session = Depends(get_db)):
             "color_bg": shop.widget_color_bg,
             "border_radius": shop.widget_border_radius,
             "custom_css": shop.widget_custom_css,
+            "currency_symbol": shop.widget_currency_symbol,
         },
     }
 

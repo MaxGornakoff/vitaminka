@@ -155,6 +155,25 @@ class ChatService:
 
         return None
 
+    @staticmethod
+    def _user_rejects_vendor(user_message: str) -> bool:
+        """Returns True when the user explicitly asks to not filter by the current brand."""
+        text = (user_message or "").lower()
+        rejection_phrases = [
+            "не обязательно",
+            "необязательно",
+            "не только от",
+            "не только",
+            "любого бренда",
+            "любой бренд",
+            "другие бренды",
+            "другой бренд",
+            "не от",
+            "любую марку",
+            "любой марки",
+        ]
+        return any(phrase in text for phrase in rejection_phrases)
+
     def _search_products_sql(self, shop_id: str, query: str, limit: int = 5) -> List[Dict]:
         tokens = [t.strip() for t in query.lower().split() if len(t.strip()) >= 3]
 
@@ -332,7 +351,7 @@ class ChatService:
     def _has_url(text: str) -> bool:
         return bool(re.search(r"https?://\S+", text or ""))
 
-    def _build_product_links_block(self, products: List[Dict], limit: int = 3) -> str:
+    def _build_product_links_block(self, products: List[Dict], limit: int = 3, currency_symbol: str | None = None) -> str:
         with_links = [p for p in products if (p.get("url") or "").strip()][:limit]
         if not with_links:
             return ""
@@ -340,18 +359,18 @@ class ChatService:
         lines = ["\n\nРекомендованные товары:"]
         for p in with_links:
             price = p.get("price")
-            currency = p.get("currency") or "RUB"
+            currency = currency_symbol or p.get("currency") or "RUB"
             price_text = f"{price} {currency}" if price is not None else "цена не указана"
             lines.append(f"- {p.get('name')} ({price_text}): {p.get('url')}")
         return "\n".join(lines)
 
-    def _ensure_links_in_reply(self, reply: str, products: List[Dict]) -> str:
+    def _ensure_links_in_reply(self, reply: str, products: List[Dict], currency_symbol: str | None = None) -> str:
         if not products:
             return reply
         if self._has_url(reply):
             return reply
 
-        links_block = self._build_product_links_block(products)
+        links_block = self._build_product_links_block(products, currency_symbol=currency_symbol)
         if not links_block:
             return reply
         return f"{reply.rstrip()}{links_block}"
@@ -400,6 +419,7 @@ class ChatService:
 
         shop = self.db.query(Shop).filter(Shop.shop_id == shop_id).first()
         manager_phone = shop.manager_phone if shop else None
+        currency_symbol = shop.widget_currency_symbol if shop else None
         
         self._get_or_create_session(shop_id=shop_id, session_id=session_id)
 
@@ -423,6 +443,8 @@ class ChatService:
         recent_history.reverse()
         llm_history = self._build_llm_history(recent_history, user_message, max_items=12)
         active_vendor = self._detect_active_vendor(shop_id=shop_id, user_message=user_message, history=llm_history)
+        if active_vendor and self._user_rejects_vendor(user_message):
+            active_vendor = None
         search_query = self._build_search_query(user_message, llm_history, active_vendor=active_vendor)
 
         relevant_products = await self._search_products(
@@ -451,7 +473,7 @@ class ChatService:
             assistant_message = self._build_products_fallback_reply(user_message, relevant_products)
 
         assistant_message = self._ensure_followup_question(assistant_message, user_message, relevant_products)
-        assistant_message = self._ensure_links_in_reply(assistant_message, relevant_products)
+        assistant_message = self._ensure_links_in_reply(assistant_message, relevant_products, currency_symbol=currency_symbol)
         assistant_message = self._ensure_manager_phone(assistant_message, manager_phone)
 
         self.db.add(
