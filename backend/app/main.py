@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
+import os
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 import asyncio
@@ -80,6 +82,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Статические файлы (widget.js и др.)
+_static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 # Роуты
 app.include_router(health.router, prefix="/api", tags=["health"])
