@@ -93,6 +93,8 @@ class ChatService:
             "любой бренд",
             "не только от",
             "не от ",
+            "есть что-то от",
+            "что-то от",
         ]
         if any(marker in text for marker in followup_markers):
             return True
@@ -116,6 +118,29 @@ class ChatService:
 
             if prev_user_message:
                 query = f"{prev_user_message}. Уточнение: {query}"
+
+        # Если пользователь спросил только про бренд (без явной категории),
+        # протягиваем последнюю пользовательскую реплику с доменным намерением.
+        current_intent = ChatService._detect_query_intent(query)
+        has_brand = ChatService._extract_brand_from_query(query) is not None
+        if current_intent == "generic" and has_brand:
+            prev_intentful_message = ""
+            for item in reversed(history):
+                if (item.get("role") or "") != "user":
+                    continue
+                prev_user_message = (item.get("content") or "").strip()
+                if not prev_user_message:
+                    continue
+                prev_intent = ChatService._detect_query_intent(prev_user_message)
+                has_goal_keywords = bool(
+                    re.search(r"набор|набрат|набрать|мышечн|массы|массу", prev_user_message.lower())
+                )
+                if prev_intent != "generic" or has_goal_keywords:
+                    prev_intentful_message = prev_user_message
+                    break
+
+            if prev_intentful_message and prev_intentful_message.lower() not in query.lower():
+                query = f"{prev_intentful_message}. Уточнение: {query}"
 
         # Всегда добавляем активный бренд, если он обнаружен в контексте диалога
         # и ещё не упомянут в запросе — так поиск находит товары именно этого бренда.
@@ -258,7 +283,7 @@ class ChatService:
         if not q:
             return None
 
-        match = re.search(r"(?:бренд[а]?|от)\s+([A-Za-zА-Яа-я0-9\-\+\. ]{2,40})", q, flags=re.IGNORECASE)
+        match = re.search(r"(?:бренд[а]?\s*:?|от)\s+([A-Za-zА-Яа-я0-9\-\+\. ]{2,40})", q, flags=re.IGNORECASE)
         if match:
             return match.group(1).strip(" ?!,.\"'")
 
@@ -370,6 +395,22 @@ class ChatService:
     def _ensure_followup_question(self, reply: str, user_message: str, products: List[Dict]) -> str:
         if not products:
             return reply
+        # Если цель уже указана (набор массы и т.п.), убираем повторный вопрос про цель.
+        already_has_goal = bool(
+            re.search(r"набор|набрат|набрать|мышечн|массы|массу|восстановлен|поддержан", (user_message or "").lower())
+        )
+        intent = self._detect_query_intent(user_message)
+        if intent == "generic":
+            intent = self._detect_products_intent(products)
+
+        if already_has_goal and intent == "protein":
+            reply = re.sub(
+                r"Подскажите, пожалуйста, какой вкус, объем и цель приема вам подходят \(набор массы, поддержание или восстановление\)\?",
+                "Подскажите, пожалуйста, какой вкус и объем вам подходят?",
+                reply,
+                flags=re.IGNORECASE,
+            )
+
         if self._has_question(reply):
             return reply
         followup = self._build_followup_question(user_message, products)
@@ -498,9 +539,9 @@ class ChatService:
             self._is_llm_error_reply(assistant_message)
             or self._is_negative_availability_reply(assistant_message)
         ):
-            assistant_message = self._build_products_fallback_reply(user_message, relevant_products)
+            assistant_message = self._build_products_fallback_reply(search_query, relevant_products)
 
-        assistant_message = self._ensure_followup_question(assistant_message, user_message, relevant_products)
+        assistant_message = self._ensure_followup_question(assistant_message, search_query, relevant_products)
         assistant_message = self._ensure_links_in_reply(assistant_message, relevant_products, currency_symbol=currency_symbol)
         assistant_message = self._ensure_manager_phone(assistant_message, manager_phone)
 
