@@ -343,6 +343,12 @@
             word-break: break-word;
           }
           .bubble a { color: #1a73e8; text-decoration: underline; }
+          .bubble p { margin: 0 0 8px; }
+          .bubble p:last-child { margin-bottom: 0; }
+          .vk-list { margin: 4px 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+          .vk-list li { padding: 7px 10px; background: #f1f6fb; border-radius: 8px; border-left: 3px solid var(--vk-blue); font-size: 12px; line-height: 1.4; }
+          .vk-list li a { font-weight: 600; }
+          .vk-price { color: #64748b; font-size: 11px; }
           .msg.user .bubble {
             background: var(--vk-blue);
             color: white;
@@ -633,12 +639,68 @@
     }
 
     formatAssistantContent(text) {
-      const escaped = this.esc(text || '');
-      const withLinks = escaped.replace(/(https?:\/\/[^\s<]+)/g, (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`);
-      return withLinks.replace(/(tel:\+?[0-9]{7,15})/g, (tel) => {
-        const phone = tel.replace(/^tel:/, '');
-        return `<a href="${tel}">${phone}</a>`;
-      });
+      const raw = String(text || '');
+      const lines = raw.split('\n');
+
+      // Build segments: blocks of product list items vs plain text lines
+      const segments = [];
+      let currentText = [];
+      let currentList = [];
+
+      const flushText = () => {
+        if (currentText.length) { segments.push({ type: 'text', lines: [...currentText] }); currentText = []; }
+      };
+      const flushList = () => {
+        if (currentList.length) { segments.push({ type: 'list', items: [...currentList] }); currentList = []; }
+      };
+
+      for (const line of lines) {
+        // Product line: "- Name (price CURRENCY): https://..."
+        const pm = line.match(/^-\s+(.+?)\s+\(([^)]+)\):\s+(https?:\/\/\S+)\s*$/);
+        if (pm) {
+          flushText();
+          currentList.push({ name: pm[1], price: pm[2], url: pm[3] });
+        } else if (/^-\s+\S/.test(line)) {
+          // Simple bullet without URL
+          flushText();
+          currentList.push({ name: line.replace(/^-\s+/, ''), price: null, url: null });
+        } else {
+          flushList();
+          currentText.push(line);
+        }
+      }
+      flushText();
+      flushList();
+
+      // Render
+      return segments.map(seg => {
+        if (seg.type === 'list') {
+          const items = seg.items.map(item => {
+            const name = this.esc(item.name);
+            const price = item.price ? `<span class="vk-price"> — ${this.esc(item.price)}</span>` : '';
+            if (item.url) {
+              return `<li><a href="${item.url}" target="_blank" rel="noopener noreferrer">${name}</a>${price}</li>`;
+            }
+            return `<li>${name}${price}</li>`;
+          }).join('');
+          return `<ul class="vk-list">${items}</ul>`;
+        }
+
+        // Text segment: double newlines → paragraph breaks
+        const paragraphs = seg.lines.join('\n').split(/\n{2,}/);
+        return paragraphs
+          .map(p => p.trim())
+          .filter(p => p.length > 0)
+          .map(p => {
+            let html = this.esc(p).replace(/\n/g, '<br>');
+            html = html.replace(/(tel:\+?[0-9]{7,15})/g, tel => {
+              const phone = tel.replace(/^tel:/, '');
+              return `<a href="${tel}">${phone}</a>`;
+            });
+            return `<p>${html}</p>`;
+          })
+          .join('');
+      }).join('');
     }
   }
 
