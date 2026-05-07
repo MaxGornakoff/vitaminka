@@ -1,13 +1,121 @@
-# Vitaminka — статус проекта
+# Vitaminka Assistant — Progress Log
 
-## Текущее состояние системы (06.05.2026)
+> Последнее обновление: 07.05.2026
 
-| Компонент | Статус |
-|---|---|
-| Backend (FastAPI) | ✅ Порт 8000, hot-reload |
-| PostgreSQL | ✅ 792 товара `test_vitaminof`, vendor в БД |
-| ChromaDB (локально) | ✅ 797 документов, vendor в метадате |
-| ChromaDB (Render) | ⏳ Пустая — нужна индексация на проде |
+## Архитектура
+
+| Слой | Технология |
+|------|-----------|
+| Backend | Python 3.11 + FastAPI, порт 8000 |
+| БД | PostgreSQL 16 (локально: Docker `vitaminka_db`; прод: Render managed) |
+| LLM | Cohere `command-r-plus-08-2024` |
+| Embeddings | Cohere `embed-multilingual-v3.0` |
+| Vector store | ChromaDB (persistent `/var/data/chroma` на Render) |
+| Admin | sqladmin 0.16.1 на `/admin` |
+| Миграции | Alembic (текущая голова: `20260507_0008`) |
+| Deploy | Render.com, Docker, auto-deploy при push в main |
+| Widget | Vanilla JS Web Component, Shadow DOM |
+
+**Production URL:** `https://vitaminka.onrender.com`  
+**Admin:** login `admin` / `vitaminka-admin-2026`
+
+---
+
+## Встраивание виджета на сайт клиента
+
+```html
+<script>
+  window.VITAMINKA_API_URL = 'https://vitaminka.onrender.com';
+  window.VITAMINKA_SHOP_ID = 'your_shop_id';
+</script>
+<script src="https://vitaminka.onrender.com/static/widget.js"></script>
+```
+
+---
+
+## Выполненные задачи
+
+### Инфраструктура
+- ✅ FastAPI backend + PostgreSQL + ChromaDB
+- ✅ Docker + Render deploy (auto-deploy при push в main)
+- ✅ Alembic миграции (0001–0008)
+- ✅ sqladmin панель
+- ✅ Каталог товаров из YML/XML фида (синхронизация)
+- ✅ Semantic search через ChromaDB, fallback на SQL LIKE
+- ✅ Widget.js раздаётся как статика из FastAPI `/static/widget.js`
+
+### Виджет (frontend)
+- ✅ Web Component с Shadow DOM (нет зависимостей)
+- ✅ Лаунчер (круглая кнопка внизу справа)
+- ✅ Pulse-анимация лаунчера через `::before` + `@keyframes pulseRing` (стабильно, не конфликтует с hover)
+- ✅ Окно чата: шапка, список сообщений, поле ввода
+- ✅ `.avatar-section` скрыта (`display: none`), Rive отключён
+- ✅ Динамическая тема из API магазина (`THEME.blue`, `THEME.dark`, `THEME.bg`, `THEME.borderRadius`)
+- ✅ Лаунчер перерисовывается после загрузки темы (тень и градиент актуальны)
+- ✅ `hexToRgba()` — конвертация HEX в rgba для динамических теней
+- ✅ Hover кнопки отправки использует `var(--vk-dark)` (цвет темы, не захардкожен)
+- ✅ Greeting с именем ассистента из БД
+- ✅ Форматирование сообщений: параграфы (`<p>`), списки товаров (`<ul class="vk-list">`)
+- ✅ Телефоны в формате `8 (XXX) XXX-XX-XX` → `<a href="tel:+7...">` (regex)
+- ✅ Ссылки `tel:+7...` → кликабельные
+- ✅ Скролл к началу нового сообщения ассистента (не к концу)
+
+### Кастомизация магазина (Admin + DB + API)
+- ✅ Поля темы в БД: `widget_color_primary`, `widget_color_secondary`, `widget_color_bg`, `widget_border_radius`, `widget_custom_css`, `widget_currency_symbol`
+- ✅ Admin-форма с русскими лейблами, плейсхолдерами, TextArea для CSS
+- ✅ API `/api/shops/{shop_id}` возвращает `widget_theme` включая `currency_symbol`
+- ✅ `currency_symbol` применяется при отображении цен в сообщениях
+
+### Диалог и RAG (backend)
+- ✅ Мультитёрновый контекст (история 12 последних реплик)
+- ✅ Определение активного бренда (`active_vendor`) из текущей реплики и истории
+- ✅ Бренд инжектируется в search query если найден в контексте
+- ✅ Детектирование отказа от бренда («не обязательно», «другой бренд» и т.п.) → `active_vendor = None`
+- ✅ Follow-up detection: короткие реплики и брендовые уточнения обогащаются предыдущим контекстом
+- ✅ Брендовые уточнения («Есть что-то от X?») подтягивают intent из истории (напр., «набор массы»)
+- ✅ Нормализация единиц объёма: `1кг → 1000 г`, `500г → 500 г`, `1л → 1000 мл`, `60кап → 60 капс` и т.п.
+- ✅ Follow-up вопрос не повторяет уже указанную цель или объём
+- ✅ Адаптивный follow-up: спрашивает только то, что ещё не указано (из цель/объём/вкус)
+- ✅ Детектирование и замена fallback если LLM говорит «не нашёл» при наличии товаров
+- ✅ LLM знает: гейнер/протеин = набор массы; понимает единицы объёма; предлагает ближайшую фасовку
+
+---
+
+## Workflow (деплой)
+
+```powershell
+# После правки widget.js:
+Copy-Item frontend\widget\widget.js backend\static\widget.js -Force
+node --check backend\static\widget.js
+python -m py_compile backend\app\...
+
+git add -A
+git commit -m "..."
+git push
+# Render автодеплой ~7-10 минут
+```
+
+## Ключевые файлы
+
+| Файл | Назначение |
+|------|-----------|
+| `frontend/widget/widget.js` | Исходник виджета (→ копируется в `backend/static/`) |
+| `backend/app/services/chat_service.py` | Вся логика диалога, RAG, follow-up |
+| `backend/app/rag/llm.py` | Cohere клиент, системный промпт |
+| `backend/app/models/shop.py` | Модель магазина с полями темы |
+| `backend/app/admin.py` | sqladmin конфигурация |
+| `backend/app/api/shops.py` | REST API магазинов |
+| `backend/alembic/versions/` | Миграции БД |
+| `render.yaml` | Render deploy конфиг |
+
+---
+
+## TODO
+
+- [ ] Rive-аватар отключён — нужна замена (SVG-анимация или Lottie)
+- [ ] Нет механизма поиска «ближайшего объёма» на уровне SQL/vector (только через LLM-промпт)
+- [ ] Аналитика диалогов (конверсии, популярные запросы)
+- [ ] Многоязычность (сейчас только RU)
 | Cohere embeddings | ✅ `embed-multilingual-v3.0`, батчи по 96 + пауза 65с |
 | Cohere LLM | ✅ `command-r-plus-08-2024`, timeout 12s + fallback |
 | Admin-панель | ✅ `/admin` — синхронизация + проверка ассистента |

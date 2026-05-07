@@ -62,6 +62,34 @@ class ChatService:
         return history
 
     @staticmethod
+    def _normalize_volume_units(text: str) -> str:
+        """
+        Нормализует единицы объёма/веса в запросе пользователя.
+        1кг → 1000 г, 1.5кг → 1500 г, 500г → 500 г, 100мл → 100 мл, 60кап → 60 капс и т.п.
+        """
+        if not text:
+            return text
+        # кг → г (целые и дробные)
+        text = re.sub(
+            r"(\d+(?:[.,]\d+)?)\s*к[гg]",
+            lambda m: f"{int(float(m.group(1).replace(',', '.')) * 1000)} г",
+            text, flags=re.IGNORECASE
+        )
+        # г/g — оставляем, но нормализуем написание
+        text = re.sub(r"(\d+)\s*(?:гр|gr|g)\b", r"\1 г", text, flags=re.IGNORECASE)
+        # мл/ml
+        text = re.sub(r"(\d+)\s*(?:мл|ml)\b", r"\1 мл", text, flags=re.IGNORECASE)
+        # кап/капс/tabs/tab
+        text = re.sub(r"(\d+)\s*(?:кап(?:с(?:ул)?)?|tabs?|caps?)\b", r"\1 капс", text, flags=re.IGNORECASE)
+        # л → мл
+        text = re.sub(
+            r"(\d+(?:[.,]\d+)?)\s*л\b",
+            lambda m: f"{int(float(m.group(1).replace(',', '.')) * 1000)} мл",
+            text, flags=re.IGNORECASE
+        )
+        return text
+
+    @staticmethod
     def _looks_like_followup_query(query: str) -> bool:
         text = (query or "").lower()
         if not text:
@@ -103,7 +131,7 @@ class ChatService:
 
     @staticmethod
     def _build_search_query(user_message: str, history: List[Dict], active_vendor: str | None = None) -> str:
-        query = (user_message or "").strip()
+        query = ChatService._normalize_volume_units((user_message or "").strip())
         if not query:
             return query
 
@@ -366,6 +394,12 @@ class ChatService:
         return "generic"
 
     @staticmethod
+    def _user_stated_volume(message: str) -> bool:
+        """True если пользователь уже указал объём/дозировку."""
+        normalized = ChatService._normalize_volume_units(message or "")
+        return bool(re.search(r"\d+\s*(?:г|мл|капс|л)\b", normalized, re.IGNORECASE))
+
+    @staticmethod
     def _build_followup_question(user_message: str, products: List[Dict]) -> str:
         intent = ChatService._detect_query_intent(user_message)
         if intent == "generic":
@@ -377,10 +411,15 @@ class ChatService:
                 (user_message or "").lower(),
             )
         )
+        already_has_volume = ChatService._user_stated_volume(user_message)
 
         if intent == "protein":
+            if already_has_goal and already_has_volume:
+                return "Подскажите, пожалуйста, какой вкус вам подходит?"
             if already_has_goal:
                 return "Подскажите, пожалуйста, какой вкус и объем вам подходят?"
+            if already_has_volume:
+                return "Подскажите, пожалуйста, какой вкус и цель приема вам подходят (набор массы, поддержание или восстановление)?"
             return "Подскажите, пожалуйста, какой вкус, объем и цель приема вам подходят (набор массы, поддержание или восстановление)?"
         if intent == "omega":
             return "Уточните, пожалуйста, какой процент EPA/DHA и формат вам удобнее: 60%, 70% или 90%, и какое количество капсул?"
@@ -403,13 +442,22 @@ class ChatService:
         if intent == "generic":
             intent = self._detect_products_intent(products)
 
-        if already_has_goal and intent == "protein":
-            reply = re.sub(
-                r"Подскажите, пожалуйста, какой вкус, объем и цель приема вам подходят \(набор массы, поддержание или восстановление\)\?",
-                "Подскажите, пожалуйста, какой вкус и объем вам подходят?",
-                reply,
-                flags=re.IGNORECASE,
-            )
+        if intent == "protein":
+            already_has_volume = self._user_stated_volume(user_message)
+            # Убираем повторный вопрос про цель если цель уже есть
+            if already_has_goal:
+                reply = re.sub(
+                    r"Подскажите, пожалуйста, какой вкус, объем и цель приема вам подходят \(набор массы, поддержание или восстановление\)\?",
+                    "Подскажите, пожалуйста, какой вкус и объем вам подходят?",
+                    reply, flags=re.IGNORECASE,
+                )
+            # Убираем повторный вопрос про объём если объём уже указан
+            if already_has_volume:
+                reply = re.sub(
+                    r"(Подскажите, пожалуйста, )?какой вкус[, иа]* объем[^?]*\?",
+                    "Подскажите, пожалуйста, какой вкус вам подходит?",
+                    reply, flags=re.IGNORECASE,
+                )
 
         if self._has_question(reply):
             return reply
