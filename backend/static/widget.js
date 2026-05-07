@@ -164,15 +164,25 @@
             justify-content: center;
             font-size: 26px;
             transition: transform 0.2s;
-            animation: pulse 2.5s infinite;
-            will-change: box-shadow;
+            will-change: transform;
+            overflow: visible;
+          }
+          .launcher::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 2px solid ${hexToRgba(THEME.blue, 0.65)};
+            animation: pulseRing 2.5s ease-out infinite;
+            pointer-events: none;
           }
           .launcher:hover {
             transform: scale(1.1);
           }
-          @keyframes pulse {
-            0%, 100% { box-shadow: 0 4px 20px ${hexToRgba(THEME.blue, 0.5)}; }
-            50% { box-shadow: 0 4px 32px ${hexToRgba(THEME.blue, 0.9)}; }
+          @keyframes pulseRing {
+            0% { transform: scale(0.9); opacity: 0.8; }
+            70% { transform: scale(1.25); opacity: 0; }
+            100% { transform: scale(1.25); opacity: 0; }
           }
         </style>
         <button class="launcher" title="${LABELS.openTitle}">${THEME.launcherIcon}</button>
@@ -257,6 +267,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            display: none;
           }
           canvas.rive-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 

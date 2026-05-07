@@ -346,7 +346,16 @@ class ChatService:
         if intent == "generic":
             intent = ChatService._detect_products_intent(products)
 
+        already_has_goal = bool(
+            re.search(
+                r"набор|набрат|набрать|мышечн|массы|массу|восстановлен|поддержан",
+                (user_message or "").lower(),
+            )
+        )
+
         if intent == "protein":
+            if already_has_goal:
+                return "Подскажите, пожалуйста, какой вкус и объем вам подходят?"
             return "Подскажите, пожалуйста, какой вкус, объем и цель приема вам подходят (набор массы, поддержание или восстановление)?"
         if intent == "omega":
             return "Уточните, пожалуйста, какой процент EPA/DHA и формат вам удобнее: 60%, 70% или 90%, и какое количество капсул?"
