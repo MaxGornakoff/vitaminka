@@ -91,6 +91,10 @@
         if (data.widget_theme) {
           this._applyWidgetTheme(data.widget_theme);
         }
+        // Re-render launcher so box-shadow + gradient use the freshly loaded theme
+        if (!this.isOpen) {
+          this.renderLauncher();
+        }
       } catch (_) {
         // Ignore silently, defaults are enough.
       }
@@ -159,7 +163,7 @@
             align-items: center;
             justify-content: center;
             font-size: 26px;
-            transition: transform 0.2s;
+            transition: transform 0.2s, box-shadow 0.2s;
             animation: pulse 2.5s infinite;
           }
           .launcher:hover {
@@ -629,7 +633,14 @@
       const bubbleContent = role === 'assistant' ? this.formatAssistantContent(text) : this.esc(text);
       el.innerHTML = `<div class="bubble">${bubbleContent}</div>`;
       container.appendChild(el);
-      container.scrollTop = container.scrollHeight;
+      if (role === 'assistant') {
+        // Scroll to the START of assistant message, not the end
+        requestAnimationFrame(() => {
+          container.scrollTop = el.offsetTop - 8;
+        });
+      } else {
+        container.scrollTop = container.scrollHeight;
+      }
     }
 
     showTyping() {
