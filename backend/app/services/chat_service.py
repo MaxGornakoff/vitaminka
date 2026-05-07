@@ -93,20 +93,21 @@ class ChatService:
         query = (user_message or "").strip()
         if not query:
             return query
-        if not ChatService._looks_like_followup_query(query):
-            return query
 
-        # Ищем предыдущую пользовательскую реплику как тему для уточнения.
-        prev_user_message = ""
-        for item in reversed(history):
-            if (item.get("role") or "") == "user":
-                prev_user_message = (item.get("content") or "").strip()
-                if prev_user_message:
-                    break
+        if ChatService._looks_like_followup_query(query):
+            # Для уточняющих реплик обогащаем запрос темой предыдущего сообщения пользователя.
+            prev_user_message = ""
+            for item in reversed(history):
+                if (item.get("role") or "") == "user":
+                    prev_user_message = (item.get("content") or "").strip()
+                    if prev_user_message:
+                        break
 
-        if prev_user_message:
-            query = f"{prev_user_message}. Уточнение: {query}"
+            if prev_user_message:
+                query = f"{prev_user_message}. Уточнение: {query}"
 
+        # Всегда добавляем активный бренд, если он обнаружен в контексте диалога
+        # и ещё не упомянут в запросе — так поиск находит товары именно этого бренда.
         if active_vendor and active_vendor.lower() not in query.lower():
             query = f"{query}. Бренд: {active_vendor}"
 
