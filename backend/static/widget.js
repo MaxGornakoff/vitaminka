@@ -69,6 +69,12 @@
       this.assistantName = LABELS.assistantName;
     }
 
+    _maybeShowLauncher() {
+      if (!this._pageLoaded || !this._settingsLoaded) return;
+      const launcher = this.shadowRoot.querySelector('.launcher');
+      if (launcher) launcher.style.opacity = '1';
+    }
+
     connectedCallback() {
       if (this.isOpen) {
         void this.openChat();
@@ -95,6 +101,8 @@
         if (!this.isOpen) {
           this.renderLauncher();
         }
+        this._settingsLoaded = true;
+        this._maybeShowLauncher();
       } catch (_) {
         // Ignore silently, defaults are enough.
       }
@@ -163,8 +171,9 @@
             align-items: center;
             justify-content: center;
             font-size: 26px;
-            transition: transform 0.2s;
-            will-change: transform;
+            opacity: 0;
+            transition: transform 0.2s, opacity 0.6s ease;
+            will-change: transform, opacity;
             overflow: visible;
           }
           .launcher::before {
