@@ -8,6 +8,7 @@ from sqladmin import Admin, ModelView
 from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
+from wtforms import TextAreaField
 
 from app.core.config import settings
 from app.db.session import SessionLocal, engine
@@ -82,7 +83,47 @@ class ShopAdmin(ModelView, model=Shop):
         Shop.catalog_sync_interval_hours,
         Shop.manager_phone,
         Shop.is_active,
+        # --- Тема виджета ---
+        Shop.widget_color_primary,
+        Shop.widget_color_secondary,
+        Shop.widget_color_bg,
+        Shop.widget_border_radius,
+        Shop.widget_custom_css,
     ]
+
+    column_labels = {
+        "shop_id": "ID магазина",
+        "name": "Название",
+        "assistant_name": "Имя ассистента",
+        "domain": "Домен",
+        "catalog_url": "URL каталога",
+        "catalog_sync_interval_hours": "Интервал синхронизации (ч)",
+        "manager_phone": "Телефон менеджера",
+        "is_active": "Активен",
+        "widget_color_primary": "🎨 Основной цвет (кнопки, шапка)",
+        "widget_color_secondary": "🎨 Вторичный цвет (градиент)",
+        "widget_color_bg": "🎨 Фон области чата",
+        "widget_border_radius": "🔲 Скругление углов окна (px)",
+        "widget_custom_css": "💻 Кастомный CSS",
+        "api_key": "API Key",
+        "last_indexed": "Последняя индексация",
+        "last_catalog_synced_at": "Последняя синхронизация каталога",
+        "last_catalog_indexed_at": "Последняя индексация каталога",
+        "created_at": "Создан",
+        "updated_at": "Обновлён",
+    }
+
+    form_overrides = {
+        "widget_custom_css": TextAreaField,
+    }
+
+    form_widget_args = {
+        "widget_custom_css": {"rows": 10, "style": "font-family:monospace;font-size:12px;"},
+        "widget_color_primary": {"placeholder": "#3498db"},
+        "widget_color_secondary": {"placeholder": "#2c3e50"},
+        "widget_color_bg": {"placeholder": "#f0f4f8"},
+        "widget_border_radius": {"placeholder": "20"},
+    }
 
     column_details_list = [
         Shop.shop_id,
@@ -94,6 +135,11 @@ class ShopAdmin(ModelView, model=Shop):
         Shop.manager_phone,
         Shop.api_key,
         Shop.is_active,
+        Shop.widget_color_primary,
+        Shop.widget_color_secondary,
+        Shop.widget_color_bg,
+        Shop.widget_border_radius,
+        Shop.widget_custom_css,
         Shop.last_indexed,
         Shop.last_catalog_synced_at,
         Shop.last_catalog_indexed_at,

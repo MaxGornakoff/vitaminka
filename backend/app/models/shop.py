@@ -21,6 +21,13 @@ class Shop(Base):
     assistant_name = Column(String(255), nullable=True, default="Ассистент")  # Имя в UI виджета
     catalog_sync_interval_hours = Column(Integer, nullable=True)  # null = использовать CATALOG_SYNC_INTERVAL_HOURS из .env
     last_indexed = Column(DateTime, nullable=True)
+
+    # Widget theme
+    widget_color_primary = Column(String(30), nullable=True)    # Основной цвет (градиент от), напр. "#3498db"
+    widget_color_secondary = Column(String(30), nullable=True)  # Вторичный цвет (градиент до), напр. "#2c3e50"
+    widget_color_bg = Column(String(30), nullable=True)         # Фон области чата, напр. "#f0f4f8"
+    widget_border_radius = Column(Integer, nullable=True)       # Скругление окна чата (px), напр. 20
+    widget_custom_css = Column(Text, nullable=True)             # Произвольный CSS для Shadow DOM
     last_catalog_synced_at = Column(DateTime, nullable=True)
     last_catalog_indexed_at = Column(DateTime, nullable=True)
     

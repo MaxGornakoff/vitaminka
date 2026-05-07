@@ -140,9 +140,17 @@ async def get_shop(shop_id: str, db: Session = Depends(get_db)):
         "shop_id": shop.shop_id,
         "name": shop.name,
         "domain": shop.domain,
-        "manager_phone": shop.manager_phone,        "assistant_name": shop.assistant_name,        "assistant_name": shop.assistant_name,
+        "manager_phone": shop.manager_phone,
+        "assistant_name": shop.assistant_name,
         "catalog_url": shop.catalog_url,
         "is_active": shop.is_active,
+        "widget_theme": {
+            "color_primary": shop.widget_color_primary,
+            "color_secondary": shop.widget_color_secondary,
+            "color_bg": shop.widget_color_bg,
+            "border_radius": shop.widget_border_radius,
+            "custom_css": shop.widget_custom_css,
+        },
     }
 
 

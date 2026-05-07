@@ -74,8 +74,55 @@
           const nameEl = this.shadowRoot.querySelector('.header-name');
           if (nameEl) nameEl.textContent = this.assistantName;
         }
+        if (data.widget_theme) {
+          this._applyWidgetTheme(data.widget_theme);
+        }
       } catch (_) {
         // Ignore silently, defaults are enough.
+      }
+    }
+
+    _applyWidgetTheme(theme) {
+      // Обновляем объект THEME (мутация свойств константы — OK)
+      if (theme.color_primary)   THEME.blue           = theme.color_primary;
+      if (theme.color_secondary) THEME.dark           = theme.color_secondary;
+      if (theme.color_bg)        THEME.bg             = theme.color_bg;
+      if (theme.border_radius != null) THEME.borderRadius = Number(theme.border_radius);
+
+      // Применяем CSS-переменные в Shadow DOM через динамический <style>
+      if (this.isOpen) {
+        let dynVars = this.shadowRoot.querySelector('#vk-dynamic-vars');
+        if (!dynVars) {
+          dynVars = document.createElement('style');
+          dynVars.id = 'vk-dynamic-vars';
+          this.shadowRoot.prepend(dynVars);
+        }
+        dynVars.textContent = `:host { --vk-blue: ${THEME.blue}; --vk-dark: ${THEME.dark}; --vk-bg: ${THEME.bg}; }`;
+
+        // Header использует inline-градиент — обновляем явно
+        const header = this.shadowRoot.querySelector('.header');
+        if (header) header.style.background = `linear-gradient(135deg, ${THEME.blue}, ${THEME.dark})`;
+
+        // Скругление окна
+        const wrap = this.shadowRoot.querySelector('.wrap');
+        if (wrap) wrap.style.borderRadius = `${THEME.borderRadius || 20}px`;
+
+        // Кастомный CSS
+        if (theme.custom_css && String(theme.custom_css).trim()) {
+          let customStyle = this.shadowRoot.querySelector('#vk-custom-css');
+          if (!customStyle) {
+            customStyle = document.createElement('style');
+            customStyle.id = 'vk-custom-css';
+            this.shadowRoot.appendChild(customStyle);
+          }
+          customStyle.textContent = String(theme.custom_css);
+        }
+      }
+
+      // Кнопка-лаунчер тоже обновляется если открыта
+      const launcher = this.shadowRoot.querySelector('.launcher');
+      if (launcher) {
+        launcher.style.background = `linear-gradient(135deg, ${THEME.blue}, ${THEME.dark})`;
       }
     }
 
