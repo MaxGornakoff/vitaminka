@@ -14,6 +14,7 @@ from app.db.session import SessionLocal, engine
 from app.models.chat import ChatMessage, ChatSession
 from app.models.product import Product
 from app.models.shop import Shop
+from app.api.shops import _SYNC_RUNTIME_STATUS
 from app.services.chat_service import ChatService
 from app.services.feed_sync import sync_shop_catalog
 
@@ -104,10 +105,13 @@ class ShopAdmin(ModelView, model=Shop):
         Shop.shop_id: lambda model, attr: Markup(
             f"""
             <div>{model.shop_id}</div>
-            <form method=\"post\" action=\"/admin-action/shop/{model.shop_id}/sync\" style=\"margin-top:10px;\">
-                <button type=\"submit\" style=\"padding:8px 12px;border:none;border-radius:6px;background:#1769e0;color:#fff;cursor:pointer;\">Синхронизировать каталог по catalog_url</button>
-            </form>
-            <a href=\"/admin-action/shop/{model.shop_id}/assistant-check\" style=\"display:inline-block;margin-top:10px;padding:8px 12px;border-radius:6px;background:#0f766e;color:#fff;text-decoration:none;\">Проверить ассистента</a>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+                <form method="post" action="/admin-action/shop/{model.shop_id}/sync" style="display:inline;">
+                    <button type="submit" style="padding:8px 12px;border:none;border-radius:6px;background:#1769e0;color:#fff;cursor:pointer;">Синхронизировать каталог</button>
+                </form>
+                <a href="/admin-action/shop/{model.shop_id}/sync/status" style="display:inline-block;padding:8px 12px;border-radius:6px;background:#f59e0b;color:#fff;text-decoration:none;">📊 Статус синхронизации</a>
+                <a href="/admin-action/shop/{model.shop_id}/assistant-check" style="display:inline-block;padding:8px 12px;border-radius:6px;background:#0f766e;color:#fff;text-decoration:none;">Проверить ассистента</a>
+            </div>
             """
         )
     }

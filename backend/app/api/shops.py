@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.services.feed_sync import sync_shop_catalog
 
 router = APIRouter()
+_SYNC_RUNTIME_STATUS: dict[str, dict] = {}
 
 class ShopRegisterRequest(BaseModel):
     shop_id: str
@@ -248,6 +249,19 @@ class SyncResponse(BaseModel):
     catalog_url: str
 
 
+class SyncStatusResponse(BaseModel):
+    shop_id: str
+    status: str
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    synced_count: Optional[int] = None
+    indexed_successfully: Optional[bool] = None
+    index_error: Optional[str] = None
+    total_products_in_db: int
+    last_catalog_synced_at: Optional[datetime] = None
+    last_catalog_indexed_at: Optional[datetime] = None
+
+
 @router.post("/{shop_id}/catalog/sync", response_model=SyncResponse)
 async def sync_catalog_from_feed(
     shop_id: str,
@@ -267,11 +281,82 @@ async def sync_catalog_from_feed(
             detail="У магазина не задан catalog_url. Укажите его в настройках магазина."
         )
 
+    started_at = datetime.utcnow()
+    _SYNC_RUNTIME_STATUS[shop_id] = {
+        "status": "running",
+        "started_at": started_at,
+        "finished_at": None,
+        "synced_count": None,
+        "indexed_successfully": None,
+        "index_error": None,
+    }
+
     try:
         result = await sync_shop_catalog(shop, db)
     except ValueError as e:
+        _SYNC_RUNTIME_STATUS[shop_id] = {
+            "status": "failed",
+            "started_at": started_at,
+            "finished_at": datetime.utcnow(),
+            "synced_count": None,
+            "indexed_successfully": False,
+            "index_error": str(e),
+        }
         raise HTTPException(status_code=422, detail=str(e))
     except RuntimeError as e:
+        _SYNC_RUNTIME_STATUS[shop_id] = {
+            "status": "failed",
+            "started_at": started_at,
+            "finished_at": datetime.utcnow(),
+            "synced_count": None,
+            "indexed_successfully": False,
+            "index_error": str(e),
+        }
         raise HTTPException(status_code=502, detail=str(e))
 
+    _SYNC_RUNTIME_STATUS[shop_id] = {
+        "status": "completed" if result.indexed_successfully else "completed_with_index_error",
+        "started_at": started_at,
+        "finished_at": datetime.utcnow(),
+        "synced_count": result.synced_count,
+        "indexed_successfully": result.indexed_successfully,
+        "index_error": result.index_error,
+    }
+
     return SyncResponse(shop_id=shop_id, synced=result.synced_count, catalog_url=shop.catalog_url)
+
+
+@router.get("/{shop_id}/catalog/sync/status", response_model=SyncStatusResponse)
+async def get_catalog_sync_status(
+    shop_id: str,
+    db: Session = Depends(get_db),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+):
+    """
+    Статус синхронизации каталога для polling из UI/скриптов.
+    """
+    shop = _get_shop_or_404(db, shop_id)
+    _validate_api_key(shop, x_api_key)
+
+    runtime = _SYNC_RUNTIME_STATUS.get(shop_id) or {}
+    total_products = db.query(Product).filter(Product.shop_id == shop_id).count()
+
+    if runtime:
+        status = runtime.get("status") or "idle"
+    elif shop.last_catalog_synced_at:
+        status = "idle"
+    else:
+        status = "never_started"
+
+    return SyncStatusResponse(
+        shop_id=shop_id,
+        status=status,
+        started_at=runtime.get("started_at"),
+        finished_at=runtime.get("finished_at"),
+        synced_count=runtime.get("synced_count"),
+        indexed_successfully=runtime.get("indexed_successfully"),
+        index_error=runtime.get("index_error"),
+        total_products_in_db=total_products,
+        last_catalog_synced_at=shop.last_catalog_synced_at,
+        last_catalog_indexed_at=shop.last_catalog_indexed_at,
+    )
