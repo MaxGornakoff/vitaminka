@@ -332,7 +332,7 @@ class ChatService:
         if not q:
             return None
 
-        match = re.search(r"(?:бренд[а]?\s*:?|от)\s+([A-Za-zА-Яа-я0-9\-\+\. ]{2,40})", q, flags=re.IGNORECASE)
+        match = re.search(r"(?:бренд[а]?\s*:?|от|из)\s+([A-Za-zА-Яа-я0-9\-\+\. ]{2,40})", q, flags=re.IGNORECASE)
         if match:
             return match.group(1).strip(" ?!,.\"'")
 
@@ -385,7 +385,7 @@ class ChatService:
     @staticmethod
     def _detect_query_intent(user_message: str) -> str:
         text = (user_message or "").lower()
-        if re.search(r"протеин|whey|гейнер|изолят|казеин", text):
+        if re.search(r"протеин|whey|гейнер|изолят|казеин|набор\s*масс|набрать\s*масс|мышечн|массонабор", text):
             return "protein"
         if re.search(r"омега|omega|рыбий жир", text):
             return "omega"
