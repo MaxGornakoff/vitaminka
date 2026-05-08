@@ -148,7 +148,7 @@ class ChatService:
                     # При отказе от бренда пропускаем сообщения, где упоминается только бренд
                     if rejected_vendor and ChatService._extract_brand_from_query(candidate) is not None:
                         intent = ChatService._detect_query_intent(candidate)
-                        has_goal = bool(re.search(r"набор|набрат|набрать|мышечн|массы|массу|похудени|сжигани|восстановлен|энерги", candidate.lower()))
+                        has_goal = bool(re.search(r"набор|набрат|набрать|мышечн|массы|массу|похудени|сжиг|сушка|рельеф|восстановлен|энерги", candidate.lower()))
                         if intent == "generic" and not has_goal:
                             continue  # бренд без темы — пропускаем
                     prev_user_message = candidate
@@ -310,6 +310,9 @@ class ChatService:
         negative_markers = [
             "нет товара",
             "нет в магазине",
+            "нет позиций",
+            "нет позиций, подходящих",
+            "в текущем списке товаров нет позиций",
             "к сожалению, в текущем магазине нет",
             "такого товара у нас нет",
             "данного товара нет",
@@ -385,6 +388,8 @@ class ChatService:
     @staticmethod
     def _detect_query_intent(user_message: str) -> str:
         text = (user_message or "").lower()
+        if re.search(r"сушк|сжиг(?:ан|ать)|жиросжиг|похуд|дефицит|рельеф", text):
+            return "cutting"
         if re.search(r"протеин|whey|гейнер|изолят|казеин|набор\s*масс|набрать\s*масс|мышечн|массонабор", text):
             return "protein"
         if re.search(r"омега|omega|рыбий жир", text):
@@ -406,6 +411,8 @@ class ChatService:
             corpus_parts.append((p.get("description") or "").lower())
         corpus = " ".join(corpus_parts)
 
+        if re.search(r"сушк|жиросжиг|l-?carni|карнитин|термо|fat\s*burn|burner|cut|shred|похуд", corpus):
+            return "cutting"
         if re.search(r"протеин|whey|гейнер|изолят|казеин", corpus):
             return "protein"
         if re.search(r"омега|omega|рыбий жир", corpus):
@@ -414,6 +421,26 @@ class ChatService:
             return "supplements"
         return "generic"
 
+    @staticmethod
+    def _filter_products_by_query_intent(user_message: str, products: List[Dict]) -> List[Dict]:
+        """Drop clearly off-topic products for highly specific intents (e.g., cutting)."""
+        intent = ChatService._detect_query_intent(user_message)
+        if intent != "cutting" or not products:
+            return products
+
+        filtered: List[Dict] = []
+        for p in products:
+            blob = " ".join(
+                [
+                    (p.get("name") or "").lower(),
+                    (p.get("category") or "").lower(),
+                    (p.get("description") or "").lower(),
+                ]
+            )
+            if re.search(r"сушк|жиросжиг|l-?carni|карнитин|термо|fat\s*burn|burner|cut|shred|похуд", blob):
+                filtered.append(p)
+
+        return filtered
     @staticmethod
     def _user_stated_volume(message: str) -> bool:
         """True если пользователь уже указал объём/дозировку."""
@@ -453,6 +480,8 @@ class ChatService:
         return "?" in (text or "")
 
     def _ensure_followup_question(self, reply: str, user_message: str, products: List[Dict]) -> str:
+        if self._is_negative_availability_reply(reply):
+            return reply
         if not products:
             return reply
         # Если цель уже указана (набор массы и т.п.), убираем повторный вопрос про цель.
@@ -501,6 +530,15 @@ class ChatService:
             price_text = f"{price} {currency}" if price is not None else "цена не указана"
             lines.append(f"- {p.get('name')} ({price_text}): {p.get('url')}")
         return "\n\n" + "\n".join(lines)
+
+    @staticmethod
+    def _is_informational_query(user_message: str) -> bool:
+        """True если пользователь спрашивает про способ приёма, состав, побочки — не про товар."""
+        text = (user_message or "").lower()
+        return bool(re.search(
+            r"как приним|как употреб|дозировк|доза|способ примен|состав|побочн|противопоказ|вред|опасно|схема|расписание|сколько приним|в какое время|натощак|на голодный|перед едой|после еды|со чем приним|чем запивать",
+            text,
+        ))
 
     def _ensure_links_in_reply(self, reply: str, products: List[Dict], currency_symbol: str | None = None) -> str:
         if not products:
@@ -601,6 +639,7 @@ class ChatService:
             query=search_query,
             limit=settings.RAG_TOP_K,
         )
+        relevant_products = self._filter_products_by_query_intent(user_message, relevant_products)
 
         context = {
             "shop_id": shop_id,
@@ -615,14 +654,12 @@ class ChatService:
             context=context,
         )
 
-        if relevant_products and (
-            self._is_llm_error_reply(assistant_message)
-            or self._is_negative_availability_reply(assistant_message)
-        ):
+        if relevant_products and self._is_llm_error_reply(assistant_message):
             assistant_message = self._build_products_fallback_reply(search_query, relevant_products)
 
         assistant_message = self._ensure_followup_question(assistant_message, search_query, relevant_products)
-        assistant_message = self._ensure_links_in_reply(assistant_message, relevant_products, currency_symbol=currency_symbol)
+        if not self._is_informational_query(user_message) and not self._is_negative_availability_reply(assistant_message):
+            assistant_message = self._ensure_links_in_reply(assistant_message, relevant_products, currency_symbol=currency_symbol)
         assistant_message = self._ensure_manager_phone(
             assistant_message, manager_phone if self._user_asks_for_contact(user_message) else None
         )
