@@ -494,13 +494,13 @@ class ChatService:
         if not with_links:
             return ""
 
-        lines = ["\n\nРекомендованные товары:"]
+        lines = []
         for p in with_links:
             price = p.get("price")
             currency = currency_symbol or p.get("currency") or "RUB"
             price_text = f"{price} {currency}" if price is not None else "цена не указана"
             lines.append(f"- {p.get('name')} ({price_text}): {p.get('url')}")
-        return "\n".join(lines)
+        return "\n\n" + "\n".join(lines)
 
     def _ensure_links_in_reply(self, reply: str, products: List[Dict], currency_symbol: str | None = None) -> str:
         if not products:

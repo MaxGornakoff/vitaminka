@@ -752,6 +752,12 @@
           .filter(p => p.length > 0)
           .map(p => {
             let html = this.esc(p).replace(/\n/g, '<br>');
+            // Markdown links [text](url) → <a> (before escaping interference, so we work on already-escaped text)
+            // esc() converts & < > " ' but NOT [ ] ( ) — so markdown syntax survives
+            html = html.replace(
+              /\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+              (_, label, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`
+            );
             // Plain Russian phone numbers → tel: links (before tel: processing)
             // Lookbehind excludes : so that tel:+7... is not double-processed
             html = html.replace(
