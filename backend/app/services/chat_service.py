@@ -130,19 +130,29 @@ class ChatService:
         return len(text.split()) <= 4
 
     @staticmethod
-    def _build_search_query(user_message: str, history: List[Dict], active_vendor: str | None = None) -> str:
+    def _build_search_query(user_message: str, history: List[Dict], active_vendor: str | None = None, rejected_vendor: str | None = None) -> str:
         query = ChatService._normalize_volume_units((user_message or "").strip())
         if not query:
             return query
 
         if ChatService._looks_like_followup_query(query):
             # Для уточняющих реплик обогащаем запрос темой предыдущего сообщения пользователя.
+            # Если пользователь отказался от бренда — ищем не просто последнее сообщение,
+            # а последнее содержательное (с целью/темой), чтобы не тащить бренд обратно.
             prev_user_message = ""
             for item in reversed(history):
                 if (item.get("role") or "") == "user":
-                    prev_user_message = (item.get("content") or "").strip()
-                    if prev_user_message:
-                        break
+                    candidate = (item.get("content") or "").strip()
+                    if not candidate:
+                        continue
+                    # При отказе от бренда пропускаем сообщения, где упоминается только бренд
+                    if rejected_vendor and ChatService._extract_brand_from_query(candidate) is not None:
+                        intent = ChatService._detect_query_intent(candidate)
+                        has_goal = bool(re.search(r"набор|набрат|набрать|мышечн|массы|массу|похудени|сжигани|восстановлен|энерги", candidate.lower()))
+                        if intent == "generic" and not has_goal:
+                            continue  # бренд без темы — пропускаем
+                    prev_user_message = candidate
+                    break
 
             if prev_user_message:
                 query = f"{prev_user_message}. Уточнение: {query}"
@@ -174,6 +184,13 @@ class ChatService:
         # и ещё не упомянут в запросе — так поиск находит товары именно этого бренда.
         if active_vendor and active_vendor.lower() not in query.lower():
             query = f"{query}. Бренд: {active_vendor}"
+
+        # Если пользователь отказался от конкретного бренда — удаляем его из запроса,
+        # чтобы векторный поиск не тяготел к товарам этого бренда.
+        if rejected_vendor:
+            import re as _re
+            pattern = _re.compile(_re.escape(rejected_vendor), _re.IGNORECASE)
+            query = pattern.sub("", query).strip(" .,;").strip()
 
         return query
 
@@ -573,9 +590,11 @@ class ChatService:
         recent_history.reverse()
         llm_history = self._build_llm_history(recent_history, user_message, max_items=12)
         active_vendor = self._detect_active_vendor(shop_id=shop_id, user_message=user_message, history=llm_history)
+        rejected_vendor: str | None = None
         if active_vendor and self._user_rejects_vendor(user_message):
+            rejected_vendor = active_vendor
             active_vendor = None
-        search_query = self._build_search_query(user_message, llm_history, active_vendor=active_vendor)
+        search_query = self._build_search_query(user_message, llm_history, active_vendor=active_vendor, rejected_vendor=rejected_vendor)
 
         relevant_products = await self._search_products(
             shop_id=shop_id,
