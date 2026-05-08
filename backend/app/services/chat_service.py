@@ -232,6 +232,10 @@ class ChatService:
             "любой бренд",
             "другие бренды",
             "другой бренд",
+            "других брендов",
+            "другого бренда",
+            "а от других",
+            "от других",
             "не от",
             "любую марку",
             "любой марки",
@@ -502,6 +506,15 @@ class ChatService:
         return cleaned
 
     @staticmethod
+    def _user_asks_for_contact(user_message: str) -> bool:
+        """True только если пользователь сам спросил про телефон/менеджера/контакт."""
+        text = (user_message or "").lower()
+        return bool(re.search(
+            r"телефон|позвон|контакт|менеджер|оператор|поддержк|связат|написат|перезвон",
+            text,
+        ))
+
+    @staticmethod
     def _mentions_manager(text: str) -> bool:
         return bool(re.search(r"менеджер|оператор|поддержк|консультант", (text or "").lower()))
 
@@ -591,7 +604,9 @@ class ChatService:
 
         assistant_message = self._ensure_followup_question(assistant_message, search_query, relevant_products)
         assistant_message = self._ensure_links_in_reply(assistant_message, relevant_products, currency_symbol=currency_symbol)
-        assistant_message = self._ensure_manager_phone(assistant_message, manager_phone)
+        assistant_message = self._ensure_manager_phone(
+            assistant_message, manager_phone if self._user_asks_for_contact(user_message) else None
+        )
 
         self.db.add(
             ChatMessage(

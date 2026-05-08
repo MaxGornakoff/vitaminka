@@ -753,8 +753,9 @@
           .map(p => {
             let html = this.esc(p).replace(/\n/g, '<br>');
             // Plain Russian phone numbers → tel: links (before tel: processing)
+            // Lookbehind excludes : so that tel:+7... is not double-processed
             html = html.replace(
-              /(?<!["'=])((?:\+?[78])[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})(?![\d\-])/g,
+              /(?<!["|'|=|:])((?:\+?[78])[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2})(?![\d\-])/g,
               (match) => {
                 const digits = match.replace(/\D/g, '');
                 const normalized = digits.startsWith('8') ? '+7' + digits.slice(1) : '+' + digits;
